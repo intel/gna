@@ -250,8 +250,7 @@ set(gna_api_impl_headers_2
   ${API_IMPL_DIR}/gna2-instrumentation-impl.h
   ${API_IMPL_DIR}/gna2-memory-impl.h
   ${API_IMPL_DIR}/gna2-model-impl.h
-  ${API_IMPL_DIR}/gna2-model-export-impl.h
-  ${API_IMPL_DIR}/gna2-validation-impl.h)
+  ${API_IMPL_DIR}/gna2-model-export-impl.h)
 
 set(gna_lib_headers
   ${gna_api_headers} ${gna_lib_headers} ${gna_api_impl_headers_2} ${gna_driver_interface_headers})
