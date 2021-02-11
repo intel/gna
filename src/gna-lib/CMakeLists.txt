@@ -279,8 +279,7 @@ set(common_sources
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
   set(windows_ddi
-    ${COMMON_DIR}/GnaDrvApi.h
-    ${COMMON_DIR}/GnaDrvApiWinDebug.h)
+    ${COMMON_DIR}/GnaDrvApi.h)
   list(APPEND common_sources ${windows_ddi})
 endif()
 
