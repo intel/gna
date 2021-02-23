@@ -40,6 +40,8 @@ struct Shape : public ShapeMap
     explicit Shape(gna_3d_dimensions shape);
 
     Shape & operator=(const Shape & right);
+    Shape(const Shape&) = default;
+    ~Shape() = default;
 
     ModelValue AsModelValue(char dimension) const;
 

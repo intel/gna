@@ -109,7 +109,14 @@ struct KernelConfig : public BaseConfig
 
 struct ExecutionConfig
 {
-    ExecutionConfig() = default;
+    const ExecutionConfig& operator =(const ExecutionConfig& right)
+    {
+	*this->SaturationCount = *right.SaturationCount;
+	return *this;
+    }
+    ~ExecutionConfig() = default;
+    ExecutionConfig(const ExecutionConfig&) = default;
+
     ExecutionConfig(KernelBuffers * intermediate, uint32_t * saturationCount, uint32_t const * bufferElementCount) :
         Intermediate{ intermediate },
         SaturationCount{ saturationCount },
@@ -135,8 +142,13 @@ struct ExecutionKernelConfig : public ExecutionConfig
 
 struct ActivationConfig
 {
-    ActivationConfig() = default;
     ActivationConfig(ActivationConfig const & source) = default;
+    ~ActivationConfig() = default;
+    const ActivationConfig& operator =(const ActivationConfig& right)
+    {
+	this->ElementCount = right.ElementCount;
+	return *this;
+    }
     ActivationConfig(uint32_t elementCount, GNA::PwlCached const * kernel);
 
     uint32_t ElementCount;
