@@ -264,8 +264,8 @@ int LinuxDriverInterface::discoverDevice(uint32_t deviceIndex, gna_parameter *pa
     uint32_t found = 0;
     for (uint8_t i = 0; i < MAX_GNA_DEVICES; i++)
     {
-        char name[12];
-        sprintf(name, "/dev/gna%hhu", i);
+        char name[18];
+        sprintf(name, "/dev/intel_gna%hhu", i);
         fd = open(name, O_RDWR);
         if (-1 == fd)
         {
