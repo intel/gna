@@ -119,6 +119,8 @@ template<typename T> class Address<T *> : public Address<T*const>
 {
 public:
     Address() = default;
+    ~Address() = default;
+    Address(const Address&) = default;
     Address(void * value) :
         Address<T*const>(value)
     {}
