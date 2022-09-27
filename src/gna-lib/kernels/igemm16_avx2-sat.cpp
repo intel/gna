@@ -1,16 +1,13 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
-#include "igemv.h"
+#include "saturate.h"
 #include "igemv16.h"
 
 #include "KernelArguments.h"
 #include "KernelMacros.h"
-
-#include "common.h"
-#include "gna-api-types-xnn.h"
 
 #include <cstdint>
 #include <cstring>
@@ -18,8 +15,8 @@
 
 void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config)
 {
-    uint32_t KT = config->RequestConfig->Transform.inputElementCount % VEC_16CAP; // config->RequestConfig->Transform.inputElementCount tail for manual processing
-    uint32_t KK = config->RequestConfig->Transform.inputElementCount - KT; // trimmed config->RequestConfig->Transform.inputElementCount for AVX2 processing
+    uint32_t KT = config->RequestConfig.Transform.inputElementCount % VEC_16CAP; // config->RequestConfig.Transform.inputElementCount tail for manual processing
+    uint32_t KK = config->RequestConfig.Transform.inputElementCount - KT; // trimmed config->RequestConfig.Transform.inputElementCount for AVX2 processing
     uint32_t kpartial;
     uint32_t nKpartial;
     uint32_t niters;
@@ -28,8 +25,8 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
     uint32_t kk;
     uint32_t i;
     uint32_t j;
-    kpartial = (config->BufferElementCount[config->RequestConfig->Transform.inputVectorCount - 1 + XNN_N_GROUP_MAX]) / config->RequestConfig->Transform.inputVectorCount;
-    nKpartial = config->RequestConfig->Transform.inputElementCount / kpartial;
+    kpartial = (config->BufferElementCount[config->RequestConfig.Transform.inputVectorCount - 1 + XNN_N_GROUP_MAX]) / config->RequestConfig.Transform.inputVectorCount;
+    nKpartial = config->RequestConfig.Transform.inputElementCount / kpartial;
 
     // simd inputs and weight
     __m256i in[8];
@@ -68,21 +65,21 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
     int16_t const * weight;
     int32_t * output;
 
-    int16_t const *inputs = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
-    auto const * bias = reinterpret_cast<int8_t const *>(config->RequestConfig->Transform.biasesSimple);
-    auto const * const biasEnd  = bias + (config->RequestConfig->Transform.bytesPerBias * config->RequestConfig->Transform.outputElementCount);
+    int16_t const *inputs = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
+    auto const * bias = reinterpret_cast<int8_t const *>(config->RequestConfig.Transform.biasesSimple);
+    auto const * const biasEnd  = bias + (config->RequestConfig.Transform.bytesPerBias * config->RequestConfig.Transform.outputElementCount);
 
-    output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
-    weight = config->RequestConfig->Transform.weights2B;
+    output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
+    weight = config->RequestConfig.Transform.weights2B;
 
-    if (1 == config->RequestConfig->Transform.inputVectorCount)
+    if (1 == config->RequestConfig.Transform.inputVectorCount)
     {
-        in_ptr0 = (__m256i*)config->RequestConfig->Inputs;
-        *input = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs) + KK;
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        in_ptr0 = (__m256i*)config->RequestConfig.Inputs;
+        *input = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs) + KK;
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
             *acc = _mm256_setzero_si256();
-            *sum = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+            *sum = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
@@ -127,92 +124,92 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
         return;
     }
 
-    if (config->RequestConfig->Transform.inputVectorCount == 8)
+    if (config->RequestConfig.Transform.inputVectorCount == 8)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d7[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 7];
+            config->Intermediate->d7[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 7];
         }
         in_ptr7 = (__m256i*)config->Intermediate->d7;
         input[7] = config->Intermediate->d7 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 7)
+    if (config->RequestConfig.Transform.inputVectorCount >= 7)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d6[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 6];
+            config->Intermediate->d6[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 6];
         }
         in_ptr6 = (__m256i*)config->Intermediate->d6;
         input[6] = config->Intermediate->d6 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 6)
+    if (config->RequestConfig.Transform.inputVectorCount >= 6)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d5[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 5];
+            config->Intermediate->d5[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 5];
         }
         in_ptr5 = (__m256i*)config->Intermediate->d5;
         input[5] = config->Intermediate->d5 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 5)
+    if (config->RequestConfig.Transform.inputVectorCount >= 5)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d4[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 4];
+            config->Intermediate->d4[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 4];
         }
         in_ptr4 = (__m256i*)config->Intermediate->d4;
         input[4] = config->Intermediate->d4 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 4)
+    if (config->RequestConfig.Transform.inputVectorCount >= 4)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d3[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 3];
+            config->Intermediate->d3[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 3];
         }
         in_ptr3 = (__m256i*)config->Intermediate->d3;
         input[3] = config->Intermediate->d3 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 3)
+    if (config->RequestConfig.Transform.inputVectorCount >= 3)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d2[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 2];
+            config->Intermediate->d2[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 2];
         }
         in_ptr2 = (__m256i*)config->Intermediate->d2;
         input[2] = config->Intermediate->d2 + KK;
     }
-    if (config->RequestConfig->Transform.inputVectorCount >= 2)
+    if (config->RequestConfig.Transform.inputVectorCount >= 2)
     {
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d1[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount + 1];
+            config->Intermediate->d1[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount + 1];
         }
         in_ptr1 = (__m256i*)config->Intermediate->d1;
         input[1] = config->Intermediate->d1 + KK;
 
-        for (i = 0; i < config->RequestConfig->Transform.inputElementCount; i++)
+        for (i = 0; i < config->RequestConfig.Transform.inputElementCount; i++)
         {
-            config->Intermediate->d0[i] = inputs[i*config->RequestConfig->Transform.inputVectorCount];
+            config->Intermediate->d0[i] = inputs[i*config->RequestConfig.Transform.inputVectorCount];
         }
         in_ptr0 = (__m256i*)config->Intermediate->d0;
         input[0] = config->Intermediate->d0 + KK;
     }
 
-    if (2 == config->RequestConfig->Transform.inputVectorCount)
+    if (2 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
             acc[0] = _mm256_setzero_si256();
             acc[1] = _mm256_setzero_si256();
 
-            sum[0] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
-            sum[1] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+            sum[0] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
+            sum[1] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
 
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -260,26 +257,26 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
             saturate_store_out(&sum[0], &output[0], config->SaturationCount);
             saturate_store_out(&sum[1], &output[1], config->SaturationCount);
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (3 == config->RequestConfig->Transform.inputVectorCount)
+    if (3 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
             acc[0] = _mm256_setzero_si256();
             acc[1] = _mm256_setzero_si256();
             acc[2] = _mm256_setzero_si256();
 
-            sum[0] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
-            sum[1] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
-            sum[2] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+            sum[0] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
+            sum[1] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
+            sum[2] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -336,24 +333,24 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
             saturate_store_out(&sum[1], &output[1], config->SaturationCount);
             saturate_store_out(&sum[2], &output[2], config->SaturationCount);
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (4 == config->RequestConfig->Transform.inputVectorCount)
+    if (4 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 acc[i] = _mm256_setzero_si256();
-                sum[i] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+                sum[i] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             }
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -421,24 +418,24 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
             saturate_store_out(&sum[2], &output[2], config->SaturationCount);
             saturate_store_out(&sum[3], &output[3], config->SaturationCount);
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (5 == config->RequestConfig->Transform.inputVectorCount)
+    if (5 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 acc[i] = _mm256_setzero_si256();
-                sum[i] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+                sum[i] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             }
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -494,42 +491,42 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 sum[i] += vec_sum(acc[i]);
             }
 
             for (j = 0; j < KT; j++, weight++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += input[i][j] * *weight;
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 saturate_store_out(&sum[i], &output[i], config->SaturationCount);
             }
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (6 == config->RequestConfig->Transform.inputVectorCount)
+    if (6 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 acc[i] = _mm256_setzero_si256();
-                sum[i] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+                sum[i] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             }
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -593,42 +590,42 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 sum[i] += vec_sum(acc[i]);
             }
 
             for (j = 0; j < KT; j++, weight++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += input[i][j] * *weight;
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 saturate_store_out(&sum[i], &output[i], config->SaturationCount);
             }
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (7 == config->RequestConfig->Transform.inputVectorCount)
+    if (7 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 acc[i] = _mm256_setzero_si256();
-                sum[i] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+                sum[i] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             }
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -698,31 +695,31 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 sum[i] += vec_sum(acc[i]);
             }
 
             for (j = 0; j < KT; j++, weight++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += input[i][j] * *weight;
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 saturate_store_out(&sum[i], &output[i], config->SaturationCount);
             }
 
-            output += config->RequestConfig->Transform.inputVectorCount;
+            output += config->RequestConfig.Transform.inputVectorCount;
         }
     }
 
-    if (8 == config->RequestConfig->Transform.inputVectorCount)
+    if (8 == config->RequestConfig.Transform.inputVectorCount)
     {
-        for (; bias < biasEnd; bias += config->RequestConfig->Transform.bytesPerBias)
+        for (; bias < biasEnd; bias += config->RequestConfig.Transform.bytesPerBias)
         {
             acc[0] = _mm256_setzero_si256();
             acc[1] = _mm256_setzero_si256();
@@ -733,15 +730,15 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
             acc[6] = _mm256_setzero_si256();
             acc[7] = _mm256_setzero_si256();
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
-                sum[i] = getBias(bias, config->RequestConfig->Transform.bytesPerBias);
+                sum[i] = getBias(bias, config->RequestConfig.Transform.bytesPerBias);
             }
             ix = 0;
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += vec_sum(acc[i]);
                     acc[i] = _mm256_setzero_si256();
@@ -818,20 +815,20 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 sum[i] += vec_sum(acc[i]);
             }
 
             for (j = 0; j < KT; j++, weight++)
             {
-                for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+                for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
                 {
                     sum[i] += input[i][j] * *weight;
                 }
             }
 
-            for (i = 0; i < config->RequestConfig->Transform.inputVectorCount; i++)
+            for (i = 0; i < config->RequestConfig.Transform.inputVectorCount; i++)
             {
                 saturate_store_out(&sum[i], output++, config->SaturationCount);
             }
@@ -841,9 +838,9 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
 
 void AffineMultiBiasKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config)
 {
-    const auto numberOfInputVectorElements = config->RequestConfig->Transform.inputElementCount;
-    const auto numberOfInputVectors = config->RequestConfig->Transform.inputVectorCount;  // aka batching
-    const auto numberOfBytesPerBias = config->RequestConfig->Transform.bytesPerBias;
+    const auto numberOfInputVectorElements = config->RequestConfig.Transform.inputElementCount;
+    const auto numberOfInputVectors = config->RequestConfig.Transform.inputVectorCount;  // aka batching
+    const auto numberOfBytesPerBias = config->RequestConfig.Transform.bytesPerBias;
 
     uint32_t KT = numberOfInputVectorElements % VEC_16CAP; // numberOfInputVectorElements tail for manual processing
     uint32_t KK = numberOfInputVectorElements - KT; // trimmed numberOfInputVectorElements for AVX2 processing
@@ -894,16 +891,16 @@ void AffineMultiBiasKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * con
     int64_t sum[8]; // 64-bit accumulator buffer
     memset(sum, 0, sizeof(sum));
 
-    int16_t const *inputs = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
+    int16_t const *inputs = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
     int16_t const * weight;
     int32_t * output;
-    auto const * multiBias = static_cast<int8_t const *>(config->RequestConfig->Transform.multiBias);
+    auto const * multiBias = static_cast<int8_t const *>(config->RequestConfig.Transform.multiBias);
 
-    auto biasStride = numberOfBytesPerBias * config->RequestConfig->Transform.multiBiasVectorCount;
-    auto const * const biasEnd = multiBias + biasStride * config->RequestConfig->Transform.outputElementCount;
+    auto biasStride = numberOfBytesPerBias * config->RequestConfig.Transform.multiBiasVectorCount;
+    auto const * const biasEnd = multiBias + biasStride * config->RequestConfig.Transform.outputElementCount;
 
-    weight = config->RequestConfig->Transform.weights2B;
-    output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    weight = config->RequestConfig.Transform.weights2B;
+    output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     if (1 == numberOfInputVectors)
     {

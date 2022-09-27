@@ -1,20 +1,14 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
+
 
 #include "convnet.h"
-#include "igemv.h"
+#include "common_avx1.hpp"
 #include "pwl.h"
-
 #include "KernelArguments.h"
 #include "KernelMacros.h"
-
-#include "common.h"
-#include "gna-api-types-xnn.h"
-
-#include <cstdint>
-#include <immintrin.h>
 
 void SumPartialPoolingFunction(const uint32_t PS, const uint32_t PNE, const uint32_t PSI, const int64_t *P, int64_t* V)
 {
@@ -63,16 +57,11 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
     uint32_t num_inputs_band_stride = filterConfig->inputBandStride;
     uint32_t num_filter_outputs = filterConfig->filterOutputCount;
 
-#if OPT_LEVEL > 1
     mm_ptr in1, in2, in3, in4, in5, in6, in7, in8, in_end, flt;
     int32_t *out1, *out2, *out3, *out4, *out5, *out6, *out7, *out8;
     const int8_t *bias;
 
-#if OPT_LEVEL == 4 || OPT_LEVEL == 5
     __m256i f, v1, v2, v3, v4, v5, v6, v7, v8;
-#else
-    mm_vector f, v1, v2, v3, v4, v5, v6, v7, v8;
-#endif
 
     mm_vector acc1, acc2, acc3, acc4, acc5, acc6, acc7, acc8,
             im1, im2, im3, im4, im5, im6, im7, im8;
@@ -181,7 +170,6 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
             bias += filterConfig->bytesPerBias;
 
 // FC is mply by 8, for AVX load there might be a tail of 8
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
             if (FC_VEC < FC)
             {
                 __m128i s1 = _mm256_castsi256_si128(v1);
@@ -212,9 +200,7 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
                 sum7 += _mm_extract_epi32(s7, 0) + _mm_extract_epi32(s7, 1) + _mm_extract_epi32(s7, 2) + _mm_extract_epi32(s7, 3);
                 sum8 += _mm_extract_epi32(s8, 0) + _mm_extract_epi32(s8, 1) + _mm_extract_epi32(s8, 2) + _mm_extract_epi32(s8, 3);
             }
-#endif
 
-#if GNA_SAT == 1
             saturate_store_out(&sum1, out1, saturationCount);
             saturate_store_out(&sum2, out2, saturationCount);
             saturate_store_out(&sum3, out3, saturationCount);
@@ -223,16 +209,6 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
             saturate_store_out(&sum6, out6, saturationCount);
             saturate_store_out(&sum7, out7, saturationCount);
             saturate_store_out(&sum8, out8, saturationCount);
-#else
-            *out1 = sum1;
-            *out2 = sum2;
-            *out3 = sum3;
-            *out4 = sum4;
-            *out5 = sum5;
-            *out6 = sum6;
-            *out7 = sum7;
-            *out8 = sum8;
-#endif
 
             out1++;
             out2++;
@@ -275,7 +251,6 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
 
             sum1 = getBias(bias, filterConfig->bytesPerBias) + vec_sum(acc1);
             bias += filterConfig->bytesPerBias;
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
             if (FC_VEC < FC)
             {
                 __m128i s1 = _mm256_castsi256_si128(v1);
@@ -284,37 +259,9 @@ void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig)
                 s1 = _mm_madd_epi16(s1, sf);
                 sum1 += _mm_extract_epi32(s1, 0) + _mm_extract_epi32(s1, 1) + _mm_extract_epi32(s1, 2) + _mm_extract_epi32(s1, 3);
             }
-#endif
-
-#if GNA_SAT == 1
             saturate_store_out(&sum1, out1++, saturationCount);
-#else
-            *out1++ = sum1;
-#endif
         }
     }
-#else
-    const int16_t* ptr_coef;
-    const int16_t* ptr_in;
-    for (j = 0; j < num_filter_outputs; j++)
-    {
-        ptr_in = I + j * num_inputs_band_stride;
-        for (i = 0; i < FN; i++)
-        {
-            ptr_coef = F + i * FC;
-            sum = getBias(B, filterConfig->bytesPerBias, i);
-            for (k = 0; k < FC; k++)
-            {
-                sum += ptr_in[k] * ptr_coef[k];
-            }
-#if GNA_SAT == 1
-            saturate_store_out(&sum, &O[j * FN + i], saturationCount);
-#else
-            O[j * FN + i] = sum;
-#endif
-        }
-    }
-#endif
 }
 
 void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
@@ -363,16 +310,10 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
     uint32_t inc;
     gna_sum_t sum1, sum2, sum3, sum4, sum5, sum6;
 
-#if OPT_LEVEL > 1
     mm_ptr in1, in2, in3, in4, in5, in6, flt, in_end;
-#if OPT_LEVEL == 4 || OPT_LEVEL == 5 // AVX1 load vectors
     __m256i v1, v2, v3, v4, v5, v6, f;
-#else
-    mm_vector v1, v2, v3, v4, v5, v6, f;
-#endif
     mm_vector im1, im2, im3, im4, im5, im6;
     mm_vector acc1, acc2, acc3, acc4, acc5, acc6;
-#endif
 
     output_index = 0;
     pool_start_index = 0;
@@ -387,7 +328,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                 ? PS - static_cast<uint32_t>(pool_num_entries)
                 : num_filter_outputs - j;
 
-#if OPT_LEVEL > 1
             uint32_t FC_VEC = FC - FC % VEC_16CAP;
             in_end = (mm_ptr)const_cast<int16_t*>(I + j * num_inputs_band_stride + FC_VEC);
 
@@ -459,7 +399,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, s2, s3, s4, s5, s6, sf;
@@ -485,7 +424,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         sum5 += _mm_extract_epi32(s5, 0) + _mm_extract_epi32(s5, 1) + _mm_extract_epi32(s5, 2) + _mm_extract_epi32(s5, 3);
                         sum6 += _mm_extract_epi32(s6, 0) + _mm_extract_epi32(s6, 1) + _mm_extract_epi32(s6, 2) + _mm_extract_epi32(s6, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
                     sum2 += vec_sum(acc2);
@@ -562,7 +500,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, s2, s3, s4, s5, sf;
@@ -585,7 +522,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         sum4 += _mm_extract_epi32(s4, 0) + _mm_extract_epi32(s4, 1) + _mm_extract_epi32(s4, 2) + _mm_extract_epi32(s4, 3);
                         sum5 += _mm_extract_epi32(s5, 0) + _mm_extract_epi32(s5, 1) + _mm_extract_epi32(s5, 2) + _mm_extract_epi32(s5, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
                     sum2 += vec_sum(acc2);
@@ -651,7 +587,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, s2, s3, s4, sf;
@@ -671,7 +606,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         sum3 += _mm_extract_epi32(s3, 0) + _mm_extract_epi32(s3, 1) + _mm_extract_epi32(s3, 2) + _mm_extract_epi32(s3, 3);
                         sum4 += _mm_extract_epi32(s4, 0) + _mm_extract_epi32(s4, 1) + _mm_extract_epi32(s4, 2) + _mm_extract_epi32(s4, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
                     sum2 += vec_sum(acc2);
@@ -727,7 +661,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, s2, s3, sf;
@@ -744,7 +677,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         sum2 += _mm_extract_epi32(s2, 0) + _mm_extract_epi32(s2, 1) + _mm_extract_epi32(s2, 2) + _mm_extract_epi32(s2, 3);
                         sum3 += _mm_extract_epi32(s3, 0) + _mm_extract_epi32(s3, 1) + _mm_extract_epi32(s3, 2) + _mm_extract_epi32(s3, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
                     sum2 += vec_sum(acc2);
@@ -790,7 +722,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, s2, sf;
@@ -804,7 +735,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         sum1 += _mm_extract_epi32(s1, 0) + _mm_extract_epi32(s1, 1) + _mm_extract_epi32(s1, 2) + _mm_extract_epi32(s1, 3);
                         sum2 += _mm_extract_epi32(s2, 0) + _mm_extract_epi32(s2, 1) + _mm_extract_epi32(s2, 2) + _mm_extract_epi32(s2, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
                     sum2 += vec_sum(acc2);
@@ -840,7 +770,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                         f  = vec_lddqu(flt);
                     }
 
-#if OPT_LEVEL != 2 && OPT_LEVEL != 3
                     if (FC_VEC < FC)
                     {
                         __m128i s1, sf;
@@ -851,7 +780,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
 
                         sum1 += _mm_extract_epi32(s1, 0) + _mm_extract_epi32(s1, 1) + _mm_extract_epi32(s1, 2) + _mm_extract_epi32(s1, 3);
                     }
-#endif
 
                     sum1 += vec_sum(acc1);
 
@@ -861,28 +789,6 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
             pool_end_index += inc;
             pool_end_index %= PS;
 
-#else
-            for (l = 0; l < inc; l++)
-            {
-                ptr_in = I + (j + l)*num_inputs_band_stride;
-
-                for (i = 0; i < FN; i++)
-                {
-                    ptr_coef = F + i * FC;
-
-                    sum = getBias(B, filterConfig->bytesPerBias, i);
-                    for (k = 0; k < FC; k++)
-                    {
-                        sum += ptr_in[k] * ptr_coef[k];
-                    }
-
-                    pool[i * CNN_POOL_SIZE_MAX + pool_end_index] = sum;
-                }
-
-                pool_end_index = (pool_end_index + 1) % PS;
-            }
-#endif
-
             j += inc;
             pool_num_entries += inc;
             if (static_cast<uint32_t>(pool_num_entries) == PS)
@@ -890,9 +796,7 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
                 for (i = 0; i < FN; i++)
                 {
                     func_partial_pooling(PS, PS, 0, pool + i * CNN_POOL_SIZE_MAX, &value);
-#if GNA_SAT == 1
                     gna_saturate_cast(value, *saturationCount);
-#endif
                     pwl->ActivateSingle(&pwl->pwl, (int32_t)value, &O[output_index * FN + i], saturationCount);
                 }
 
@@ -918,9 +822,7 @@ void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
         for (i = 0; i < FN; i++)
         {
             func_partial_pooling(PS, static_cast<uint32_t>(pool_num_entries), pool_start_index, pool + i * CNN_POOL_SIZE_MAX, &value);
-#if GNA_SAT == 1
             gna_saturate_cast(value, *saturationCount);
-#endif
             pwl->ActivateSingle(&pwl->pwl, (int32_t)value, &O[output_index * FN + i], saturationCount);
         }
 

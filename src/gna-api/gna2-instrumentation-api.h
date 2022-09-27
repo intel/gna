@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-instrumentation-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -26,7 +26,7 @@
 
 #include "gna2-common-api.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 /**
  Inference request instrumentation points.
@@ -151,6 +151,7 @@ GNA2_API enum Gna2Status Gna2InstrumentationConfigCreate(
  @param instrumentationConfigId Identifier of instrumentation config used.
  @param requestConfigId Request configuration to modify.
  @return Status of the operation.
+ @retval Gna2StatusDeviceVersionInvalid When target device for given request config is not compatible.
  */
 GNA2_API enum Gna2Status Gna2InstrumentationConfigAssignToRequestConfig(
     uint32_t instrumentationConfigId,
@@ -179,6 +180,13 @@ enum Gna2InstrumentationUnit
      Processor cycles.
 
      Uses RDTSC. @see https://en.wikipedia.org/wiki/Time_Stamp_Counter
+     @note
+     Linux driver of GNA does not provide
+     ::Gna2InstrumentationPointDrvPreprocessing,
+     ::Gna2InstrumentationPointDrvProcessing,
+     ::Gna2InstrumentationPointDrvDeviceRequestCompleted,
+     ::Gna2InstrumentationPointDrvCompletion in cycles.
+     All values are set to 0.
      */
     Gna2InstrumentationUnitCycles = 2,
 };

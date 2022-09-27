@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "SoftwareModel.h"
 
@@ -14,7 +14,6 @@
 #include "RequestConfiguration.h"
 #include "Validator.h"
 
-#include "gna-api-types-xnn.h"
 
 #include <cstdint>
 #include <functional>
@@ -38,18 +37,8 @@ void SoftwareModel::buildSingleLayer(std::unique_ptr<Layer> & layer)
     layer->VerifyHas1BInputAnd2BWeight();
 
     layers.push_back(std::move(layer));
-}
 
-void SoftwareModel::CheckModel(uint32_t declaredBatchSize, void * operationPointer) const
-{
-    Expect::InRange(declaredBatchSize, ui32_1, XNN_N_GROUP_MAX,
-        Gna2StatusXnnErrorLyrCfg);
-
-    ModelErrorHelper::ExpectGtZero(layerCount, Gna2ItemTypeModelNumberOfOperations);
-    Expect::InRange(layerCount, ui32_1,
-        HardwareCapabilities::GetMaximumLayerCount(DefaultDeviceVersion),
-        Gna2StatusXnnErrorNetLyrNo);
-    Expect::NotNull(operationPointer);
+    bufferConfigValidator.populate(*layers.back(), static_cast<uint32_t>(layers.size()) - 1);
 }
 
 uint32_t SoftwareModel::FindMaximumOperandSize(uint32_t operandIndex) const
@@ -74,42 +63,78 @@ void SoftwareModel::FindMaximumOperandSizeForSingleLayer(Layer const & layer,
     maxSize = ((maxSize) > (operandSize)) ? (maxSize) : (operandSize);
 }
 
+SoftwareModel::SoftwareModel(const Gna2Model& model, BaseValidator const&& softwareOnlyValidator,
+    const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn) :
+    SoftwareModel{ model, supportedCpuAccelerationsIn }
+{
+    build(model.Operations, softwareOnlyValidator, softwareOnlyValidator, {});
+}
+
 SoftwareModel::SoftwareModel(const Gna2Model& model,
-    BaseValidator validator,
+    BaseValidator const && softwareOnlyValidator,
+    BaseValidator const && hwConsistentValidator,
+    const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn,
+    const std::vector<std::unique_ptr<SubModel>>& subModels) :
+    SoftwareModel{ model, supportedCpuAccelerationsIn }
+{
+    build(model.Operations, softwareOnlyValidator, hwConsistentValidator, subModels);
+}
+
+SoftwareModel::SoftwareModel(const Gna2Model& model,
     const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn) :
     layerCount{ model.NumberOfOperations },
     supportedCpuAccelerations{ supportedCpuAccelerationsIn }
 {
-    CheckModel(1, model.Operations);
-    build(model.Operations, validator);
+    Expect::NotNull(model.Operations);
 }
 
-uint32_t SoftwareModel::Score(
-    uint32_t layerIndex,
-    uint32_t layerCountIn,
-    RequestConfiguration const &requestConfiguration,
-    RequestProfiler *profiler,
-    KernelBuffers *fvBuffers)
+void SoftwareModel::build(const Gna2Operation* const operations, const BaseValidator& softwareOnlyValidator,
+    const BaseValidator& hwConsistentValidator, const std::vector<std::unique_ptr<SubModel>>& subModels)
 {
-    validateConfiguration(requestConfiguration);
+    maximumOperandSizes.emplace(ScratchpadOperandIndex, 0);
+    maximumOperandSizes.emplace(SoftwareScratchpadOperandIndex, 0);
+    const auto hasHwValidator = !subModels.empty()
+        && softwareOnlyValidator.Generation != hwConsistentValidator.Generation;
 
-    const auto accel = requestConfiguration.Acceleration.GetEffectiveSoftwareAccelerationMode(supportedCpuAccelerations);
+    for (auto i = uint32_t{ 0 }; i < layerCount; i++)
+    {
+        try
+        {
+            auto * validator = &softwareOnlyValidator;
+            if (hasHwValidator && !SubModel::IsSoftwareLayer(i, subModels))
+            {
+                validator = &hwConsistentValidator;
+            }
+            auto layer = Layer::Create(operations[i], *validator);
+            buildSingleLayer(layer);
+        }
+        catch (...)
+        {
+            GnaModelErrorException::DispatchAndSetLayer(i);
+        }
+    }
+}
+
+void SoftwareModel::Score(ScoreContext & context)
+{
+    const auto accel = context.requestConfiguration.Acceleration.GetEffectiveSoftwareAccelerationMode(supportedCpuAccelerations);
 
     LogAcceleration(accel);
 
-    fvBuffers->ReallocateCnnScratchPad(maximumOperandSizes.at(SoftwareScratchpadOperandIndex));
-    auto config = InferenceConfig{ fvBuffers, requestConfiguration };
-    auto layerIter = layers.cbegin() + layerIndex;
-    auto const layerEnd = layerIter + layerCountIn;
+    context.buffers->ReallocateCnnScratchPad(maximumOperandSizes.at(SoftwareScratchpadOperandIndex));
+    auto config = InferenceConfig{ context.buffers, context.requestConfiguration };
+    auto layerIter = layers.cbegin() + context.layerIndex;
+    auto const layerEnd = layerIter + context.layerCount;
 
-    profiler->Measure(Gna2InstrumentationPointLibExecution);
+    context.profiler.Measure(Gna2InstrumentationPointLibExecution);
 
     for (; layerIter < layerEnd; ++layerIter)
     {
         auto const & layer = *layerIter;
-        auto const found = requestConfiguration.LayerConfigurations.find(layerIndex);
-        if (found == requestConfiguration.LayerConfigurations.end())
+        auto const found = context.requestConfiguration.LayerConfigurations.find(context.layerIndex);
+        if (found == context.requestConfiguration.LayerConfigurations.end())
         {
+
             layer->ComputeHidden(accel, config.GetEffective(*layer));
         }
         else
@@ -118,15 +143,10 @@ uint32_t SoftwareModel::Score(
             layer->Compute(*layerConfiguration, accel, config.GetEffective(*layer));
         }
 
-        ++layerIndex;
+        ++context.layerIndex;
     }
 
-    return config.SaturationCount;
-}
-
-void SoftwareModel::validateConfiguration(const RequestConfiguration& configuration) const
-{
-    UNREFERENCED_PARAMETER(configuration);
+    context.saturationCount += config.SaturationCount;
 }
 
 uint32_t SoftwareModel::GetMaximumOperandSize(uint32_t operandIndex)
@@ -137,7 +157,7 @@ uint32_t SoftwareModel::GetMaximumOperandSize(uint32_t operandIndex)
         return found->second;
     }
 
-    uint32_t maxSize = FindMaximumOperandSize(operandIndex);
+    auto maxSize = FindMaximumOperandSize(operandIndex);
     maximumOperandSizes.emplace(operandIndex, maxSize);
     return maxSize;
 }
@@ -161,8 +181,7 @@ InferenceConfig::InferenceConfig(KernelBuffers* fvBuffers,
 {
     executionConfig = std::make_unique<ExecutionConfig>(fvBuffers,
         &SaturationCount, requestConfiguration.BufferElementCount);
-    auto const is3_0 = HardwareCapabilities::Is3_0Device(requestConfiguration.GetConsistentDevice());
-    has3_0Consistency = is3_0 && requestConfiguration.Acceleration.GetHwConsistency();
+    has3_0Consistency = HardwareCapabilities::Is3_0Device(requestConfiguration.GetConsistentDevice());
     if (has3_0Consistency)
     {
         executionConfig3_0 = std::make_unique<ExecutionConfig>(fvBuffers,
@@ -171,6 +190,7 @@ InferenceConfig::InferenceConfig(KernelBuffers* fvBuffers,
     }
     else
     {
+        executionConfig3_0 = nullptr;
         getEffective = &InferenceConfig::getNormal;
     }
 }

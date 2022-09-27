@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -11,7 +11,6 @@
 #include "MemoryContainer.h"
 #include "RequestConfiguration.h"
 
-#include "gna-api.h"
 #include "gna2-instrumentation-api.h"
 
 #include <cstdint>
@@ -34,40 +33,6 @@ enum GnaOperationMode : uint8_t
     GMM = 0,
     xNN = 1
 };
-
-/*struct IoBufferPatch
-{
-    uint32_t bufferLdOffset;
-    uint32_t bufferOffset;
-};
-
-struct NnopTypePatch
-{
-    uint32_t nnopTypeLdOffset;
-    NN_OP_TYPE nnopType;
-};
-
-struct XnnAlPatch
-{
-    uint32_t xnnAlBufferLdOffset;
-    uint32_t xnnAlBufferOffset;
-
-    uint32_t xnnAlIndicesLdOffset;
-    uint16_t xnnAlIndices;
-};
-
-struct GmmAlPatch
-{
-    uint32_t gmmAlBufferLdOffset;
-    ASLADDR gmmAlBufferOffset;
-
-    uint32_t gmmAlIndicesLdOffset;
-    ASTLISTLEN gmmAlIndices;
-
-    uint32_t gmmScrlenLdOffset;
-    GMMSCRLEN gmmSrclen;
-};
-*/
 
 struct DriverPatch
 {
@@ -99,6 +64,11 @@ public:
 
     void Invalidate();
     void Update(uint32_t layerIndex, uint32_t layerCount, GnaOperationMode mode);
+
+    bool IsSwFallbackEnabled() const
+    {
+        return requestConfiguration.Acceleration.IsSoftwareFallbackEnabled();
+    }
 
     /* these fields will not change between request executions */
     const uint8_t HwPerfEncoding;

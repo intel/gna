@@ -1,7 +1,7 @@
-﻿/**
- @copyright (C) 2017-2021 Intel Corporation
+/**
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Macros.h"
 
@@ -32,7 +32,7 @@ static void transposeN8(int16_t *input, int16_t *output, uint32_t M);
 
 static void transposeLarge(int16_t *input, int16_t *output, uint32_t M, uint32_t N);
 
-void TransposeKernelImpl(TransposeConfig const * const transposeConfig)
+void TransposeKernelImpl2B(TransposeConfig const * const transposeConfig)
 {
     uint32_t M = transposeConfig->rowCount;
     uint32_t N = transposeConfig->columnCount;
@@ -831,8 +831,9 @@ void transposeM8(int16_t *input, int16_t *output, uint32_t N)
 {
     uint32_t M = 8;
     uint32_t N_VEC = N - N % VEC_16CAP;
-    uint32_t M_VEC = M - M % VEC_16CAP;
-    int16_t *in1 = input + N;
+
+    int16_t *in0 = input;
+    int16_t *in1 = in0 + N;
     int16_t *in2 = in1 + N;
     int16_t *in3 = in2 + N;
     int16_t *in4 = in3 + N;
@@ -863,9 +864,9 @@ void transposeM8(int16_t *input, int16_t *output, uint32_t N)
     __m256i pack1, pack2, pack3, pack4, pack5, pack6, pack7, pack8;
 
     int16_t *input_end = input + N_VEC;
-    for (; input < input_end;)
+    for (; in0 < input_end;)
     {
-        input += VEC_16CAP;
+        in0 += VEC_16CAP;
         in1 += VEC_16CAP;
         in2 += VEC_16CAP;
         in3 += VEC_16CAP;
@@ -934,7 +935,7 @@ void transposeM8(int16_t *input, int16_t *output, uint32_t N)
         out6 += M * VEC_16CAP;
         out7 += M * VEC_16CAP;
 
-        a = _mm256_lddqu_si256((__m256i*) input);
+        a = _mm256_lddqu_si256((__m256i*) in0);
         b = _mm256_lddqu_si256((__m256i*) in1);
         c = _mm256_lddqu_si256((__m256i*) in2);
         d = _mm256_lddqu_si256((__m256i*) in3);
@@ -942,14 +943,6 @@ void transposeM8(int16_t *input, int16_t *output, uint32_t N)
         f = _mm256_lddqu_si256((__m256i*) in5);
         g = _mm256_lddqu_si256((__m256i*) in6);
         h = _mm256_lddqu_si256((__m256i*) in7);
-    }
-
-    for (uint32_t i = M_VEC; i < M; i++)
-    {
-        for (uint32_t j = 0; j < N_VEC; j++)
-        {
-            output[j * M + i] = input[i * N + j];
-        }
     }
 
     for (uint32_t i = N_VEC; i < N; i++)

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Tensor.h"
 
@@ -16,56 +16,59 @@
 
 using namespace GNA;
 
-Tensor::Tensor(const ApiTensor & tensor) :
+Tensor::Tensor(const ApiTensor & tensor, uint32_t operandIndex) :
     Tensor{ Shape::Create(tensor.Shape, Layout{ tensor.Layout }),
-        GetDataMode(tensor).Type, GetDataMode(tensor).Mode, tensor.Data }
+        GetDataMode(tensor), tensor.Data, operandIndex }
 {
 }
 
 DataMode Tensor::GetDataMode(const Gna2Tensor& tensor)
 {
-    ModelErrorHelper::ExpectInSet(tensor.Mode, { Gna2TensorModeDefault });
-    try
-    {
-        return DataMode{ tensor.Type, tensor.Mode };
-    }
-    catch(...)
-    {
-        throw GnaModelErrorException(Gna2ItemTypeOperandType, Gna2ErrorTypeNotInSet, tensor.Type);
-    }
+    return DataMode{ tensor.Type, tensor.Mode };
 }
 
-Tensor::Tensor(const ApiTensor & tensor, gna_tensor_order order, const Validator & validatorIn) :
+Tensor::Tensor(const ApiTensor & tensor, gna_tensor_order order, const Validator & validatorIn, uint32_t operandIndex)
+try :
     Tensor{ Shape::Create(tensor.Shape, order),
         GetDataMode(tensor),
         tensor.Data,
-        validatorIn}
+        validatorIn,
+        operandIndex}
 {
 }
+catch (GnaException&)
+{
+    GnaModelErrorException::DispatchAndFill(operandIndex);
+}
 
-Tensor::Tensor(const Shape & dimensions, const DataType dataType, const TensorMode tensorMode, void const * buffer) :
-    Component{ dimensions },
-    Mode{ dataType, tensorMode },
+Tensor::Tensor(const Shape & dimensions, const DataMode & dataMode, void const * buffer, uint32_t operandIndex) :
+    Component{ dimensions, operandIndex, false },
+    Mode{ dataMode },
     Size{ getEffectiveSize(Mode, Count) },
     Buffer{ buffer }
 {}
 
 Tensor::Tensor(const Shape & dimensions, const DataMode & dataMode, void const * buffer,
-    const Validator & validatorIn) :
-    Component{ dimensions, validatorIn, false }, // disable dimension validation as it's performed here with Mode information
+    const Validator & validatorIn, uint32_t operandIndex)
+try :
+    Component{ dimensions, validatorIn, false, operandIndex, false }, // disable dimension validation as it's performed here with Mode information
     Mode{ dataMode },
     Size{ getEffectiveSize(Mode, Count) },
     Buffer{ buffer }
 {
     validate();
 }
+catch (GnaException&)
+{
+    GnaModelErrorException::DispatchAndFill(operandIndex);
+}
 
-Tensor::Tensor(const Tensor & tensor, const Validator & validatorIn) :
-    Tensor{ tensor.Dimensions, tensor.Mode, tensor.Buffer, validatorIn }
+Tensor::Tensor(const Tensor & tensor, const Validator & validatorIn, uint32_t operandIndex) :
+    Tensor{ tensor.Dimensions, tensor.Mode, tensor.Buffer, validatorIn, operandIndex }
 {}
 
-Tensor::Tensor(const ApiTensor& apiTensor, const Validator& validatorIn) :
-    Tensor { Tensor{apiTensor}, validatorIn }
+Tensor::Tensor(const ApiTensor& apiTensor, const Validator& validatorIn, uint32_t operandIndex) :
+    Tensor { Tensor{apiTensor}, validatorIn, operandIndex }
 {}
 
 void Tensor::UpdateBuffer(const BaseAddress & buffer)
@@ -76,15 +79,18 @@ void Tensor::UpdateBuffer(const BaseAddress & buffer)
 
 void Tensor::ValidateBuffer(const void * const buffer) const
 {
-    auto caps = static_cast<const TensorLimits*>(validator->Capabilities);
-    validator->ValidateBuffer(buffer, Size, caps->Align.Value);
+    if (validator)
+    {
+        auto const caps = reinterpret_cast<const TensorLimits*>(validator->Capabilities);
+        validator->ValidateBuffer(buffer, Size, caps->GetAddressAlign().Value);
+    }
 }
 
 void Tensor::validate() const
 {
     if (validator)
     {
-        const auto caps = static_cast<const TensorLimits*>(validator->Capabilities);
+        auto const caps = reinterpret_cast<const TensorLimits*>(validator->Capabilities);
         try
         {
             Expect::InSet(Mode, caps->Modes);
@@ -96,32 +102,21 @@ void Tensor::validate() const
                 Gna2ErrorTypeNotInSet,
                 Mode.Type);
         }
-        if (GNA_DATA_DISABLED != Mode)
+        if (Gna2TensorModeDisabled != Mode.Mode)
         {
-            validateDimensions();
-            validator->ValidateBufferIfSet(Buffer, Size, caps->Align);
+            ValidateDimensions(Mode.Type);
+            ValidateBuffer(Buffer);
         }
         else
         {
-            Expect::Null(Buffer);
+            ModelErrorHelper::ExpectNull(Buffer);
         }
     }
-}
-
-void Tensor::validateDimensions() const
-{
-    // update Multiplier when varies for data modes
-    auto caps = *validator->Capabilities;
-    for (auto & dim : caps.Dimensions)
-    {
-        dim.second.Multipliers.SetEffective(Mode.Type);
-    }
-    Component::Validate(caps, true);
 }
 
 uint32_t Tensor::getEffectiveSize(const DataMode& mode, uint32_t count)
 {
-    return Gna2TensorModeConstantScalar == mode.Mode ? mode.Size : count * mode.Size;
+    return (Gna2TensorModeConstantScalar == mode.Mode) ? mode.Size : count * mode.Size;
 }
 
 std::pair<uint32_t, uint32_t> Tensor::getGroupingAndElements(
@@ -144,8 +139,24 @@ std::pair<uint32_t, uint32_t> Tensor::getGroupingAndElements(
     }
 }
 
-std::pair<uint32_t, uint32_t> Tensor::getGroupingAndElements(const nn_layer& layer) const
+const AlignLimits* TensorLimits::overridenAlign = nullptr;
+
+void TensorLimits::OverrideAlign(const uint32_t newAlign)
 {
-    UNREFERENCED_PARAMETER(layer);
-    throw GnaException(Gna2StatusNotImplemented);
+    static AlignLimits overriden{ 1, Gna2StatusMemoryAlignmentInvalid };
+    if (newAlign == 0)
+    {
+        overridenAlign = nullptr;
+    }
+    overriden.Value = newAlign;
+    overridenAlign = &overriden;
+}
+
+const AlignLimits& TensorLimits::GetAddressAlign() const
+{
+    if(overridenAlign != nullptr)
+    {
+        return *overridenAlign;
+    }
+    return addressAlign;
 }

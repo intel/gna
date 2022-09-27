@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -13,13 +13,9 @@
 #include "RequestBuilder.h"
 #include "RequestHandler.h"
 
-#include "gna-api.h"
-#include "gna2-instrumentation-api.h"
-
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <vector>
 
 struct Gna2ModelSueCreekHeader;
 
@@ -29,9 +25,11 @@ namespace GNA
 class Device
 {
 public:
-    Device(uint32_t deviceIndex, uint32_t threadCount = 1);
-    Device(const Device &) = delete;
+    Device(const Device&) = delete;
+    Device(Device&&) = delete;
     Device& operator=(const Device&) = delete;
+    Device& operator=(Device&&) = delete;
+
     virtual ~Device() = default;
 
     DeviceVersion GetVersion() const;
@@ -40,25 +38,11 @@ public:
 
     void SetNumberOfThreads(uint32_t threadCount);
 
-    template<class T>
-    uint32_t LoadModel(const T& model)
-    {
-        auto compiledModel = std::make_unique<CompiledModel>(
-            model, accelerationDetector, hardwareCapabilities);
+    virtual uint32_t LoadModel(const ApiModel& model) = 0;
 
-        if (!compiledModel)
-        {
-            throw GnaException(Gna2StatusResourceAllocationError);
-        }
+    CompiledModel const & GetModel(uint32_t modelId);
 
-        auto modelId = modelIdSequence++;
-
-        compiledModel->BuildHardwareModel(*driverInterface);
-        models.emplace(modelId, std::move(compiledModel));
-        return modelId;
-    }
-
-    void ReleaseModel(uint32_t const modelId);
+    void ReleaseModel(uint32_t modelId);
 
     void AttachBuffer(uint32_t configId, uint32_t operandIndex, uint32_t layerIndex, void *address);
 
@@ -66,11 +50,11 @@ public:
 
     void ReleaseConfiguration(uint32_t configId);
 
-    void EnableHardwareConsistency(uint32_t configId, DeviceVersion deviceVersion);
+    bool IsVersionConsistent(DeviceVersion deviceVersion) const;
 
-    void EnforceAcceleration(uint32_t configId, Gna2AccelerationMode accel);
+    void EnforceAcceleration(uint32_t configId, Gna2AccelerationMode accelerationMode);
 
-    void AttachActiveList(uint32_t configId, uint32_t layerIndex, uint32_t indicesCount, const uint32_t* const indices);
+    void AttachActiveList(uint32_t configId, uint32_t layerIndex, uint32_t indicesCount, const uint32_t* indices);
 
     void PropagateRequest(uint32_t configId, uint32_t *requestId);
 
@@ -78,44 +62,36 @@ public:
 
     void Stop();
 
-    void* Dump(uint32_t modelId, Gna2ModelSueCreekHeader* modelHeader, Gna2Status* status,
-            Gna2UserAllocator customAlloc);
-
-    void DumpLdNoMMu(uint32_t modelId, Gna2UserAllocator customAlloc,
-        void *& exportData, uint32_t & exportDataSize);
-
-    uint32_t CreateProfilerConfiguration(std::vector<Gna2InstrumentationPoint>&& selectedInstrumentationPoints, uint64_t* results);
-
-    void ReleaseProfilerConfiguration(uint32_t configId);
-
-    void AssignProfilerConfigToRequestConfig(uint32_t instrumentationConfigId, uint32_t requestConfigId);
-
-    void SetInstrumentationUnit(uint32_t configId, Gna2InstrumentationUnit instrumentationUnit);
-
-    void SetHardwareInstrumentation(uint32_t configId, enum Gna2InstrumentationMode instrumentationMode);
+    void AssignProfilerConfigToRequestConfig(uint32_t requestConfigId, ProfilerConfiguration& profilerConfiguration);
 
     bool HasModel(uint32_t modelId) const;
-
-    bool HasMemory(void * memory) const;
 
     bool HasRequestConfigId(uint32_t requestConfigId) const;
 
     bool HasRequestId(uint32_t requestId) const;
 
-    void MapMemory(Memory& memoryObject);
+    virtual void MapMemory(Memory& memoryObject)
+    {
+        UNREFERENCED_PARAMETER(memoryObject);
+    }
 
-    void UnMapMemory(Memory & memoryObject);
+    virtual void UnMapMemory(Memory & memoryObject)
+    {
+        UNREFERENCED_PARAMETER(memoryObject);
+    }
 
 protected:
-    static const std::map<const gna_device_generation, const DeviceVersion> deviceDictionary;
+    explicit Device(std::unique_ptr<HardwareCapabilities>&& hardwareCapabilitiesIn);
 
-    uint32_t id;
-
-    static uint32_t modelIdSequence;
+    uint32_t StoreModel(std::unique_ptr<CompiledModel> && compiledModel);
 
     std::unique_ptr<DriverInterface> driverInterface;
 
-    HardwareCapabilities hardwareCapabilities;
+    static const std::map<const Gna2DeviceGeneration, const DeviceVersion> deviceDictionary;
+
+    static uint32_t modelIdSequence;
+
+    std::unique_ptr<HardwareCapabilities> hardwareCapabilities;
 
     AccelerationDetector accelerationDetector;
 
@@ -124,8 +100,6 @@ protected:
     RequestHandler requestHandler;
 
     std::map<uint32_t, std::unique_ptr<CompiledModel>> models;
-
-private:
-    uint32_t numberOfThreads;
 };
+
 }

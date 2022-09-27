@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Capabilities.h"
 
@@ -30,7 +30,7 @@ ComponentLimits * FullCapabilitiesMap::GetLatestCaps(const LayerValidator& valid
         auto& caps = at(validator.Operation);
         for (auto latestHW = caps.rbegin(); latestHW != caps.rend(); ++latestHW)
         {
-            if (latestHW->first <= validator.HwCapabilities.GetDeviceGeneration())
+            if (latestHW->first <= validator.Generation)
             {
                 return latestHW->second.get();
             }

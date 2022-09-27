@@ -1,12 +1,10 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "HardwareModel.h"
 
-#include "ActivationFunction.h"
-#include "common.h"
 #include "CompiledModel.h"
 #include "Expect.h"
 #include "GnaConfig.h"
@@ -15,13 +13,13 @@
 #include "HardwareLayer.h"
 #include "Layer.h"
 #include "Memory.h"
-#include "SubModel.h"
 #include "TransformMap.h"
 
-#include "gna-api-status.h"
-#include "gna-api-types-xnn.h"
+#include "gna2-model-export-api.h"
 
-#include <algorithm>
+#include <sstream>
+#include <cinttypes>
+#include <iomanip>
 
 using namespace GNA;
 
@@ -37,24 +35,11 @@ HardwareModel::HardwareModel(CompiledModel const & softwareModel, const Hardware
     hwCapabilities{ hwCaps },
     gmmDescriptorsSize{ getGmmDescriptorsSize(model.GmmCount) },
     xnnDescriptorsSize{ getLayerDescriptorsSize(model.LayerCount, hwCapabilities.GetDeviceVersion()) },
-    HwModule{ HwModuleInterface::Create("gna_hw") }
+    HwModule{ hwCapabilities.GetDeviceVersion() }
 {
 }
 
-bool HardwareModel::IsSoftwareLayer(const std::vector<std::unique_ptr<SubModel>>& submodels, uint32_t layerIndex)
-{
-    for (const auto& subModel : submodels)
-    {
-        if (layerIndex >= subModel->LayerIndex && layerIndex < subModel->LayerIndex + subModel->GetLayerCount() &&
-            subModel->Type == SubmodelType::Software)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-void HardwareModel::Build(const std::vector<std::unique_ptr<SubModel>>& submodels)
+void HardwareModel::Build()
 {
     prepareAllocationsAndModel();
 
@@ -62,24 +47,40 @@ void HardwareModel::Build(const std::vector<std::unique_ptr<SubModel>>& submodel
     if (0 != gmmDescriptorsSize)
     {
         gmmDescriptor = AddrGmmCfg(ldMemory->GetBuffer<uint8_t>() +
-                LayerDescriptor::GetSize(model.LayerCount, hwCapabilities.GetDeviceVersion()));
+            LayerDescriptor::GetSize(model.LayerCount, hwCapabilities.GetDeviceVersion()));
     }
     auto layerDescriptor = LayerDescriptor(*baseDescriptor, gmmDescriptor,
         getHwOffsetFunction);
-    auto i = uint32_t { 0 };
+    auto i = uint32_t{ 0 };
     for (auto const & layerIter : model.GetLayers())
     {
         try
         {
             auto const & layer = *layerIter;
-            const auto parameters = DescriptorParameters{layer, layerDescriptor, *HwModule };
-            if (IsSoftwareLayer(submodels, i))
+            const auto parameters = DescriptorParameters{ layer, layerDescriptor, HwModule };
+            if (IsSoftwareLayer(i))
             {
                 hardwareLayers.push_back(nullptr);
             }
             else
             {
                 hardwareLayers.push_back(HardwareLayer::Create(parameters));
+#if DEBUG == 1
+                std::stringstream descriptorStream;
+                Log->Message("Layer %d descriptor :\n", i);
+                descriptorStream << "\n";
+                const auto addr = hardwareLayers.back()->XnnDescriptor.GetMemAddress().Get();
+                for (unsigned line = 0; line < 8; line++)
+                {
+                    descriptorStream << std::hex << std::setw(11) << reinterpret_cast<uint64_t>(addr + line * 8) << " ";
+                    for (auto byte = 0u; byte < 8; byte++)
+                    {
+                        descriptorStream << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(*(addr + line * 8 + byte)) << " ";
+                    }
+                    descriptorStream << "\n";
+                }
+                Log->Message(descriptorStream.str().c_str());
+#endif // DEBUG == 1
             }
             if (INTEL_GMM == layer.Operation)
             {
@@ -88,11 +89,6 @@ void HardwareModel::Build(const std::vector<std::unique_ptr<SubModel>>& submodel
             layerDescriptor.Forward(gmmDescriptor);
             i++;
         }
-        catch (GnaModelErrorException& e)
-        {
-            e.SetLayerIndex(i);
-            throw;
-        }
         catch (const GnaException& e)
         {
             if (e.GetStatus() == Gna2StatusHardwareModuleNotFound ||
@@ -100,11 +96,11 @@ void HardwareModel::Build(const std::vector<std::unique_ptr<SubModel>>& submodel
             {
                 throw;
             }
-            throw GnaModelErrorException(i, e.GetStatus());
+            GnaModelErrorException::DispatchAndSetLayer(i);
         }
         catch (...)
         {
-            throw GnaModelErrorException(i);
+            GnaModelErrorException::DispatchAndSetLayer(i);
         }
     }
 }
@@ -131,43 +127,42 @@ HardwareLayer const * HardwareModel::TryGetLayer(uint32_t layerIndex) const
     }
 }
 
-uint32_t HardwareModel::GetBufferOffset(const BaseAddress& address) const
+LdaOffset HardwareModel::GetBufferOffset(const BaseAddress& address) const
 {
-    return allocations.GetBufferOffset(address, PAGE_SIZE);
+    return allocations.GetBufferOffset(address, MemoryBufferAlignment);
 }
 
 uint32_t HardwareModel::getLayerDescriptorsSize(
-    const uint32_t layerCount, const DeviceVersion deviceVersion)
+    uint32_t layerCount, DeviceVersion deviceVersion)
 {
-    auto layerDescriptorsSizeTmp = LayerDescriptor::GetSize(layerCount, deviceVersion);
+    const auto layerDescriptorsSizeTmp = LayerDescriptor::GetSize(layerCount, deviceVersion);
     return layerDescriptorsSizeTmp;
 }
 
-uint32_t HardwareModel::getGmmDescriptorsSize(const uint32_t gmmLayersCount)
+uint32_t HardwareModel::getGmmDescriptorsSize(uint32_t gmmLayersCount)
 {
-    auto const gmmDescriptorsSizeTmp = size_t{gmmLayersCount * sizeof(GMM_CONFIG)};
+    auto const gmmDescriptorsSizeTmp = size_t{ gmmLayersCount * sizeof(GMM_CONFIG) };
     return static_cast<uint32_t>(gmmDescriptorsSizeTmp);
 }
 
 void HardwareModel::prepareAllocationsAndModel()
 {
-    Expect::InRange(model.LayerCount, ui32_1, HardwareCapabilities::GetMaximumLayerCount(DefaultDeviceVersion),
-        Gna2StatusXnnErrorNetLyrNo);
     auto ldMemorySize = calculateDescriptorSize(true);
     auto ldSize = LayerDescriptor::GetSize(1, hwCapabilities.GetDeviceVersion());
 
     ldMemory = std::make_unique<Memory>(ldMemorySize, ldSize);
     if (!ldMemory)
     {
-        throw GnaException {Gna2StatusResourceAllocationError};
+        throw GnaException{ Gna2StatusResourceAllocationError };
     }
 
     prepareBaseDescriptor();
 
     allocations.Append(model.GetAllocations());
 
+
     auto const modelSize = allocations.GetMemorySizeAlignedToPage();
-    Expect::InRange(modelSize, hwCapabilities.MaximumModelSize,
+    Expect::InRange(modelSize, HardwareCapabilities::MaximumModelSize,
         Gna2StatusMemoryTotalSizeExceeded);
 
     getHwOffsetFunction = [this](const BaseAddress& buffer) { return GetBufferOffset(buffer); };
@@ -184,4 +179,26 @@ void HardwareModel::prepareBaseDescriptor()
 
     // make ensure it's first on a list
     allocations.Emplace(*ldMemory);
+}
+
+void HardwareModel::createScratchPadMemory(void * buffer, uint32_t size)
+{
+    scratchPadMemory = std::make_unique<Memory>(buffer, size);
+    if (!scratchPadMemory)
+    {
+        throw GnaException{ Gna2StatusResourceAllocationError };
+    }
+    scratchPadMemory->SetTag(Gna2MemoryTagScratch);
+}
+
+bool HardwareModel::IsSoftwareLayer(uint32_t layerIndex) const
+{
+    UNREFERENCED_PARAMETER(layerIndex);
+    return false;
+}
+
+HardwareModelTarget::HardwareModelTarget(CompiledModel const& softwareModel, const HardwareCapabilities& hwCaps) :
+    HardwareModel(softwareModel, hwCaps)
+{
+    Build();
 }

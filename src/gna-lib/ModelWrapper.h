@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #ifndef __GNA2_MODEL_WRAPPER_H
 #define __GNA2_MODEL_WRAPPER_H
@@ -9,12 +9,14 @@
 #include "gna2-model-impl.h"
 
 #include "Expect.h"
+#include "GnaException.h"
 #include "Shape.h"
 #include "Tensor.h"
 
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <map>
 
 namespace GNA
 {
@@ -48,12 +50,15 @@ enum OperationInfoKey
     ParameterIndexBiasVectorIndex,
     ParameterIndexMaximumScore,
     ParameterIndexDelay,
+    ParameterIndexThresholdCondition,
+    ParameterIndexThresholdMode,
+    ParameterIndexThresholdMask,
 };
 
 class ModelWrapper
 {
 public:
-    static void OperationInit(ApiOperation& operation,
+    static void OperationInit(Gna2Operation& operation,
         OperationType type, Gna2UserAllocator userAllocator, bool initOnlyRequiredOperands = false);
 
     static uint32_t DataTypeGetSize(DataType type);
@@ -78,7 +83,7 @@ public:
         void const * buffer, T ... dimensions)
     {
         auto const shape = Shape(GNA_TENSOR_ORDER_ANY, static_cast<uint32_t>(dimensions)...);
-        auto const tensor = std::make_unique<Tensor>(shape, dataType, tensorMode, buffer);
+        auto const tensor = std::make_unique<Tensor>(shape, DataMode{dataType, tensorMode}, buffer);
         return static_cast<ApiTensor>(*tensor);
     }
 
@@ -104,7 +109,7 @@ public:
     }
 
     template<class ... T>
-    static void SetOperands(ApiOperation & operation, T ... operands)
+    static void SetOperands(Gna2Operation & operation, T ... operands)
     {
         Expect::True(operation.NumberOfOperands >= GetOperationInfo(operation.Type, NumberOfOperandsRequired),
             Gna2StatusModelConfigurationInvalid);
@@ -114,7 +119,7 @@ public:
     }
 
     template<class ... T>
-    static void SetParameters(ApiOperation & operation, T ... parameters)
+    static void SetParameters(Gna2Operation & operation, T ... parameters)
     {
         Expect::Equal(operation.NumberOfParameters, GetOperationInfo(operation.Type, NumberOfParametersMax),
             Gna2StatusModelConfigurationInvalid);
@@ -140,7 +145,7 @@ public:
 
     static bool HasParameter(const Gna2Operation& operation, uint32_t parameterIndex);
     static void ExpectParameterAvailable(const Gna2Operation & operation, uint32_t index);
-
+    static void ExpectParameterNotAvailable(const Gna2Operation & operation, uint32_t index);
     template<class T>
     static T GetParameter(const Gna2Operation & operation, OperationInfoKey parameter)
     {

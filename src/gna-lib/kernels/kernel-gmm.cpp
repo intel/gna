@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "kernel-gmm.h"
 

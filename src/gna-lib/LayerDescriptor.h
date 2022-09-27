@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -13,8 +13,6 @@
 #include "PoolingKernelArguments.h"
 #include "ThresholdParameters.h"
 
-#include "gna-api.h"
-#include "gna-api-types-xnn.h"
 #include "gna2-common-impl.h"
 
 #include <map>
@@ -26,6 +24,34 @@ class HardwareCapabilities;
 
 using AddrGmmCfg = Address<GMM_CONFIG *>;
 using AddrGmmCfgC = Address<GMM_CONFIG * const>;
+
+
+struct LdaOffset
+{
+    LdaOffset(uint32_t offsetIn):
+        Offset{offsetIn}
+    {
+    }
+
+    uint32_t Offset = 0;
+    bool IsExternal = false;
+};
+
+// Functor for getting buffer offset for HW
+using GetHwOffset = std::function<const LdaOffset(const BaseAddress&)>;
+
+typedef enum _gmm_read_elimination
+{
+    GMM_NORMAL_OPERATION,
+    GMM_READ_ELIMINATION_ENABLED
+} gmm_read_elimination;
+
+typedef enum _gmm_calculation_mode
+{
+    GMM_L2_DISTANCE,
+    GMM_L1_DISTANCE,
+    GMM_LINF_DISTANCE
+} gmm_calculation_mode;
 
 // Available Xnn Layer Descriptor parameters for all hw versions
 typedef enum _GmmParameterType
@@ -145,6 +171,7 @@ typedef enum _XnnParameterType
     bias_grp_buffer,    // 0x38; 0x3b Bias grouping array pointer [4B elements]
 
     pwl_seg_def_buffer, // 0x3c; 0x3f Pointer to array that holds the activation function section definition [8B elements]
+
     cnn2d_in_dim_d,     // CNN2D Input Volume Dimension - Depth
     cnn2d_in_dim_w,     // CNN2D Input Volume Dimension - Width
     cnn2d_in_dim_h,     // CNN2D Input Volume Dimension - Height
@@ -174,6 +201,8 @@ typedef enum _XnnParameterType
     cnn2d_kernel_scalar,// CNN2D Convolution Kernel constant scalar
     cnn2d_bias_mode,    // CNN2D Convolution Bias Mode
 
+    th_input_src,       // Affine threshold: Input-Source: Applicable only if Autonomous Extension present
+    th_output_src,      // Affine threshold: Output-Source: Applicable only if Autonomous Extension present
     th_bias_src,        // Affine threshold: Bias-Source (BSRC): Applicable only if Autonomous Extension present
     th_int_mask,        // Affine threshold: Threshold Mask (THM): w.r.t. TH Condition
     th_op_mode,         // Affine threshold: Threshold Operation Mode (THOM)
@@ -210,11 +239,11 @@ public:
     {
         Expect::InRange<uint8_t>(bitOffset, 31, Gna2StatusDataModeInvalid);
         Expect::InRange<uint8_t>(bitCount, 1, 32, Gna2StatusDataModeInvalid);
-        Expect::NotNull(translator.get());
+        Expect::NotNull(translator);
     }
 
-    XnnParameter(BaseAddress descriptorAddress, uint32_t descriptorOffset,
-                const XnnParameter& param, const GetHwOffset getHwOffset) :
+    XnnParameter(BaseAddress const & descriptorAddress, uint32_t descriptorOffset,
+                const XnnParameter& param, const GetHwOffset & getHwOffset) :
         Size { param.Size },
         offset { param.offset },
         address { descriptorAddress + offset },
@@ -231,7 +260,7 @@ public:
         set(value);
     }
 
-    void operator=(const gna_data_mode mode)
+    void operator=(const DataType mode)
     {
         set(mode);
     }
@@ -242,6 +271,11 @@ public:
     }
 
     void operator=(const KernelPoolingMode mode)
+    {
+        set(mode);
+    }
+
+    void operator=(const ThresholdSource mode)
     {
         set(mode);
     }
@@ -266,7 +300,8 @@ public:
     void operator=(const BaseAddress& buffer)
     {
         Expect::True(4 == Size && 0 == bitCount, Gna2StatusUnknownError);
-        *address.Get<uint32_t>() = getBufferOffset(buffer);
+        const auto ldaOffset = getBufferOffset(buffer);
+        *address.Get<uint32_t>() = ldaOffset.Offset;
     }
 
     uint8_t* operator&() const
@@ -357,7 +392,7 @@ public:
 
     ~LayerDescriptor() = default;
 
-    void Forward(AddrGmmCfg gmmDescriptor)
+    void Forward(AddrGmmCfg const & gmmDescriptor)
     {
         address = address + Size;
         offset = offset + Size;
@@ -372,7 +407,7 @@ public:
     // return XnnParameter copy for GMM data manipulation
     XnnParameter operator[](const GmmParameterType paramType) const
     {
-        auto gmmOffset = GmmDescriptor.GetOffset(memoryBase);
+        const auto gmmOffset = GmmDescriptor.GetOffset(memoryBase);
         return XnnParameter(GmmDescriptor, gmmOffset, gmmReferenceParams->at(paramType), getHwOffset);
     }
 
@@ -390,6 +425,12 @@ public:
     uint32_t GetOffset() const
     {
         return address.GetOffset(memoryBase);
+    }
+
+    bool IsExternalBuffer(void * addressIn) const
+    {
+        auto const buffer = getHwOffset(addressIn);
+        return buffer.IsExternal;
     }
 
     uint32_t Size;

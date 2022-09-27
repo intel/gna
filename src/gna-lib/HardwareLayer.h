@@ -1,19 +1,17 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "Address.h"
-#include "common.h"
 #include "DataMode.h"
 #include "GnaConfig.h"
 #include "GnaTypes.h"
 #include "HwModuleInterface.hpp"
 #include "LayerDescriptor.h"
 
-#include "gna-api-types-gmm.h"
 #include "gna2-common-impl.h"
 
 #include <cstdint>
@@ -29,6 +27,7 @@ class PoolingFunction2D;
 struct AffineFunction;
 struct ConvolutionFunction2D;
 struct FiltersTensor;
+struct Tensor;
 
 struct DescriptorParameters
 {
@@ -88,6 +87,8 @@ protected:
 
     void saveCommonPart();
     void save();
+
+    void saveThresholdExternal(const Tensor& tensor, const XnnParameterType& externalParameter);
     void saveActivation(const ActivationFunction* activationIn);
 };
 
@@ -178,7 +179,7 @@ protected:
     void save();
 
 private:
-    static const uint32_t CNN_N_FLT_ITER_MAX = 16; // CNN maximum number of filters per iteration
+    static constexpr uint32_t CNN_N_FLT_ITER_MAX = 16; // CNN maximum number of filters per iteration
 
     uint32_t filtersIterationCount;                // Number of iterations  to process all filters.
     uint32_t filtersCountInLastIteration;          // Number of filters in last iteration.
@@ -198,8 +199,7 @@ public:
     HardwareLayerCnn2D(const DescriptorParameters& parameters);
     virtual ~HardwareLayerCnn2D() = default;
 
-    static uint32_t GetKernelMemorySize(DeviceVersion deviceVersion,
-        FiltersTensor const * filter);
+    static uint32_t GetKernelMemorySize(FiltersTensor const * filter);
 
     static uint32_t GetConvolutionMemorySize(DeviceVersion deviceVersion,
         ConvolutionFunction2D const * cnnIn);
@@ -214,13 +214,11 @@ protected:
 
     HwUarchParams CalculateUArchConfig() const;
 
-    ConvolutionFunction2D const * const cnn;
+    ConvolutionFunction2D const & cnn;
     PoolingFunction2D const * const pooling;
     bool const is1D = false;
 
 private:
-    static const uint32_t CNN_N_FLT_ITER_MAX = 16; // CNN maximum number of filters per iteration
-
     HwUarchParams uArchConfig;
 };
 
@@ -243,8 +241,6 @@ public:
     virtual uint32_t GetScrlen(uint32_t indicesCount) const override;
 
 protected:
-    static const std::map<const gna_gmm_mode, const GMM_MODE_CTRL> GmmModes;
-
     void save();
 };
 }

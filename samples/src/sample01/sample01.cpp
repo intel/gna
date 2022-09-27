@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #define __STDC_WANT_LIB_EXT1__ 1
 

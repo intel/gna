@@ -1,7 +1,7 @@
-﻿/**
- @copyright (C) 2017-2021 Intel Corporation
+/**
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "igemv16.h"
 
@@ -29,7 +29,7 @@ static void transposeN6(int16_t *input, int16_t *output, uint32_t M);
 static void transposeN7(int16_t *input, int16_t *output, uint32_t M);
 static void transposeN8(int16_t *input, int16_t *output, uint32_t M);
 
-void TransposeKernelImpl(TransposeConfig const * const transposeConfig)
+void TransposeKernelImpl2B(TransposeConfig const * const transposeConfig)
 {
     uint32_t M = transposeConfig->rowCount;
     uint32_t N = transposeConfig->columnCount;

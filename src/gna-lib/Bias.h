@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -10,8 +10,6 @@
 #include "Tensor.h"
 
 #include "ConvolutionKernelArguments.h"
-
-#include "gna-api-types-xnn.h"
 
 #include <cstdint>
 

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #ifndef WIN32
 
@@ -12,15 +12,10 @@
 #include "Memory.h"
 #include "Request.h"
 
-#include "gna-h-wrapper.h"
-
-#include "gna-api.h"
-#include "gna-api-status.h"
-#include "profiler.h"
-
 #include "gna2-common-impl.h"
+#include "gna2-memory-impl.h"
 
-#include <errno.h>
+#include <cerrno>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -36,31 +31,29 @@ using namespace GNA;
 
 bool LinuxDriverInterface::OpenDevice(uint32_t deviceIndex)
 {
-    union gna_parameter params[] =
-    {
-        { GNA_PARAM_DEVICE_TYPE },
-        { GNA_PARAM_INPUT_BUFFER_S },
-        { GNA_PARAM_RECOVERY_TIMEOUT },
+    LinuxDriverInterface::ParamsMap params = {
+        { GNA_PARAM_DEVICE_TYPE,      { { { GNA_PARAM_DEVICE_TYPE } }, false } },
+        { GNA_PARAM_INPUT_BUFFER_S,   { { { GNA_PARAM_INPUT_BUFFER_S } }, false } },
+        { GNA_PARAM_RECOVERY_TIMEOUT, { { { GNA_PARAM_RECOVERY_TIMEOUT } }, false } },
+        // 'old' driver has no knowledge of GNA_PARAM_DDI_VERSION,
+        // hence GNA_PARAM_DDI_VERSION_UNKNOWN = 0 is returned.
+        { GNA_PARAM_DDI_VERSION,      { { { GNA_PARAM_DDI_VERSION } }, true } },
     };
-    constexpr size_t paramsNum = sizeof(params)/sizeof(params[0]);
 
-    const auto found = discoverDevice(deviceIndex, params, paramsNum);
-    if (found == -1)
-    {
+    const auto devFd = discoverDevice(deviceIndex, params);
+    if (devFd == -1)
         return false;
-    }
-    gnaFileDescriptor = found;
 
-    try
-    {
-        driverCapabilities.deviceVersion = Gna2DeviceVersionFromInt(params[0].out.value);
-        driverCapabilities.recoveryTimeout = static_cast<uint32_t>(params[2].out.value);
-        driverCapabilities.hwInBuffSize = static_cast<uint32_t>(params[1].out.value);
-    }
-    catch(std::out_of_range&)
-    {
-        return false;
-    }
+    gnaFileDescriptor = devFd;
+
+    auto paramValue = [&params](ParamsMap::key_type id) {
+                          return (params[id].first.out.value);
+                      };
+
+    driverCapabilities.deviceVersion = static_cast<DeviceVersion>(paramValue(GNA_PARAM_DEVICE_TYPE));
+    driverCapabilities.recoveryTimeout = static_cast<uint32_t>(paramValue(GNA_PARAM_RECOVERY_TIMEOUT));
+    driverCapabilities.hwInBuffSize = static_cast<uint32_t>(paramValue(GNA_PARAM_INPUT_BUFFER_S));
+    driverCapabilities.isSoftwareFallbackSupported = paramValue(GNA_PARAM_DDI_VERSION) >= GNA_DDI_VERSION_3;
 
     return true;
 }
@@ -97,7 +90,7 @@ void LinuxDriverInterface::MemoryUnmap(uint64_t memoryId)
 }
 
 RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
-                                        RequestProfiler * const profiler) const
+                                           RequestProfiler & profiler) const
 {
     RequestResult result = { };
     int ret;
@@ -125,57 +118,70 @@ RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
         throw GnaException { Gna2StatusXnnErrorLyrCfg };
     }
 
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestReady);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestReady);
+
+    if (hardwareRequest.IsSwFallbackEnabled())
+        computeArgs.in.config.flags |= static_cast<decltype(computeArgs.in.config.flags)>(GNA_FLAG_SCORE_QOS);
 
     ret = ioctl(gnaFileDescriptor, GNA_COMPUTE, &computeArgs);
     if (ret == -1)
     {
-        throw GnaException { Gna2StatusDeviceOutgoingCommunicationError };
+        switch (errno)
+        {
+            case EBUSY:
+                if (hardwareRequest.IsSwFallbackEnabled())
+                    throw GnaException { Gna2StatusDeviceQueueError };
+                break;
+
+            default:
+                throw GnaException { Gna2StatusDeviceOutgoingCommunicationError };
+        }
     }
 
     gna_wait wait_data = {};
     wait_data.in.request_id = computeArgs.out.request_id;
     wait_data.in.timeout = (driverCapabilities.recoveryTimeout + 1) * 1000;
 
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestSent);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestSent);
     ret = ioctl(gnaFileDescriptor, GNA_WAIT, &wait_data);
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestCompleted);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestCompleted);
     if(ret == 0)
     {
         result.status = ((wait_data.out.hw_status & GNA_STS_SATURATE) != 0)
-            ? Gna2StatusWarningArithmeticSaturation
-            : Gna2StatusSuccess;
+                        ? Gna2StatusWarningArithmeticSaturation
+                        : Gna2StatusSuccess;
 
         result.driverPerf.Preprocessing = wait_data.out.drv_perf.pre_processing;
         result.driverPerf.Processing = wait_data.out.drv_perf.processing;
         result.driverPerf.DeviceRequestCompleted = wait_data.out.drv_perf.hw_completed;
         result.driverPerf.Completion = wait_data.out.drv_perf.completion;
 
+        result.hardwarePerf.total = wait_data.out.hw_perf.total;
+        result.hardwarePerf.stall = wait_data.out.hw_perf.stall;
+
         const auto profilerConfiguration = hardwareRequest.GetProfilerConfiguration();
         if (profilerConfiguration)
         {
-            convertDriverPerfResult(profilerConfiguration->GetUnit(), result.driverPerf);
+            convertPerfResultUnit(result.driverPerf, profilerConfiguration->GetUnit());
+            DriverInterface::convertPerfResultUnit(result.hardwarePerf, profilerConfiguration->GetUnit());
         }
-
-        result.hardwarePerf.total = wait_data.out.hw_perf.total;
-        result.hardwarePerf.stall = wait_data.out.hw_perf.stall;
     }
     else
     {
         switch(errno)
         {
-        case EIO:
-            result.status = parseHwStatus(static_cast<uint32_t>(wait_data.out.hw_status));
-            break;
-        case EBUSY:
-            result.status = Gna2StatusWarningDeviceBusy;
-            break;
-        case ETIME:
-            result.status = Gna2StatusDeviceCriticalFailure;
-            break;
-        default:
-            result.status = Gna2StatusDeviceIngoingCommunicationError;
-            break;
+            case EIO:
+                result.status = parseHwStatus(static_cast<uint32_t>(wait_data.out.hw_status));
+                break;
+            case EBUSY:
+                result.status = Gna2StatusWarningDeviceBusy;
+                break;
+            case ETIME:
+                result.status = Gna2StatusDeviceCriticalFailure;
+                break;
+            default:
+                result.status = Gna2StatusDeviceIngoingCommunicationError;
+                break;
         }
     }
 
@@ -258,38 +264,44 @@ Gna2Status LinuxDriverInterface::parseHwStatus(uint32_t hwStatus) const
     return Gna2StatusDeviceCriticalFailure;
 }
 
-int LinuxDriverInterface::discoverDevice(uint32_t deviceIndex, gna_parameter *params, size_t paramsNum)
+int LinuxDriverInterface::discoverDevice(uint32_t deviceIndex, ParamsMap &out)
 {
-    int fd = -1;
-    uint32_t found = 0;
+    uint32_t devIt = 0;
+
     for (uint8_t i = 0; i < MAX_GNA_DEVICES; i++)
     {
-        char name[18];
-        sprintf(name, "/dev/intel_gna%hhu", i);
-        fd = open(name, O_RDWR);
-        if (-1 == fd)
-        {
+        std::string name("/dev/intel_gna");
+        int devFd = open(name.append(std::to_string(i)).c_str(), O_RDWR);
+        if (-1 == devFd)
             continue;
-        }
 
         bool paramsValid = true;
-        for (size_t p = 0; p < paramsNum && paramsValid; p++)
+        auto params = out;
+        for (auto &it : params)
         {
-            paramsValid &= ioctl(fd, GNA_GET_PARAMETER, &params[p]) == 0;
+            auto &value = it.second;
+            int error = ioctl(devFd, GNA_GET_PARAMETER, &value.first);
+            if (error < 0 && errno == EINVAL && value.second /*ZERO_ON_EINVAL*/) {
+                value.first.out.value = 0;
+                error = 0;
+            }
+
+            paramsValid &= !error;
         }
-        if (paramsValid && found++ == deviceIndex)
+        if (paramsValid && devIt++ == deviceIndex)
         {
-            return fd;
+            out = std::move(params);
+            return devFd;
         }
 
-        close(fd);
-        fd = -1;
+        close(devFd);
     }
+
     return -1;
 }
 
- void LinuxDriverInterface::convertDriverPerfResult(
-     const Gna2InstrumentationUnit targetUnit, DriverPerfResults & driverPerf)
+void LinuxDriverInterface::convertPerfResultUnit(DriverPerfResults & driverPerf,
+    const Gna2InstrumentationUnit targetUnit)
 {
     uint64_t divider = 1;
 

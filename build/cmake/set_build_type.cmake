@@ -1,5 +1,5 @@
-#@copyright (C) 2020-2021 Intel Corporation
-#SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright (C) 2018-2022 Intel Corporation
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 get_property(IsMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(NOT IsMultiConfig)

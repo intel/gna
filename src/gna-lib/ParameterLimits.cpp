@@ -1,39 +1,49 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ParameterLimits.h"
 
+#include "Expect.h"
 #include "ModelError.h"
 #include "Shape.h"
 
 using namespace GNA;
 
-// If any dimension in map is invalid prints error status code and throws exception.
-template<typename T>
-inline static void DimensionIsValid(const T& dimension, const RangeLimits<T>& limits)
+MultiplierLimits::MultiplierLimits(const MultiplierLimits& multipliers, ModelErrorSource error) :
+    MultiplierMap{ multipliers },
+    Error{ error }
 {
-    ModelErrorHelper::ExpectBelowEq(dimension, limits.Max.Value, Gna2ItemTypeShapeDimensions);
-    ModelErrorHelper::ExpectAboveEq(dimension, limits.Min.Value, Gna2ItemTypeShapeDimensions);
-
-    ModelErrorHelper::ExpectMultiplicityOf(dimension, limits.Multipliers.GetEffective(), Gna2ItemTypeShapeDimensions);
 }
 
-void GNA::ExpectShapeIsValid(const Shape& dimensions, const ShapeLimits& limits)
+MultiplierLimits::MultiplierLimits(uint32_t multiplier, ModelErrorSource error) :
+    MultiplierMap{ { multiplier } },
+    Error( error )
+{}
+
+uint32_t& MultiplierLimits::at(Gna2DataType type)
 {
-    for (const auto& dim : dimensions)
+    Expect::InRange<Gna2DataType>(type, Gna2DataTypeWeightScaleFactor, Gna2StatusNullArgumentNotAllowed);
+    return MultiplierMap::at(static_cast<size_t>(type));
+}
+
+uint32_t MultiplierLimits::at(Gna2DataType type) const
+{
+    Expect::InRange(type, Gna2DataTypeWeightScaleFactor, Gna2StatusNullArgumentNotAllowed);
+    return MultiplierMap::at(static_cast<size_t>(type));
+}
+
+void MultiplierLimits::SetEffective(DataType type)
+{
+    if (Gna2DataTypeNone != type &&
+        (*this)[type] != 0)
     {
-        try
-        {
-            auto limit = limits.at(dim.first);
-            DimensionIsValid(dim.second, limit);
-        }
-        catch (GnaModelErrorException& e)
-        {
-            const auto index = dimensions.LayoutOrder.GetApiIndex(dim.first);
-            e.SetDimensionIndex(index);
-            throw;
-        }
+        (*this)[Gna2DataTypeNone] = at(type);
     }
+}
+
+uint32_t MultiplierLimits::GetEffective() const
+{
+    return at(Gna2DataTypeNone);
 }

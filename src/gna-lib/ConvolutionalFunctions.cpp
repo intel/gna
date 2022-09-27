@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ConvolutionalFunctions.h"
 
@@ -14,72 +14,53 @@
 #include "Tensor.h"
 #include "Validator.h"
 
-#include "gna-api-types-xnn.h"
-#include "gna-api.h"
 
 #include <memory>
 #include <utility>
+#include "ConvolutionalLayer2DCapabilities.h"
 
 using namespace GNA;
+using CnnCaps = GNA::ConvolutionalLayer2DCapabilities;
 
 FiltersTensor::FiltersTensor(const Shape& dimensions, const DataMode & dataMode, void * buffer,
-    const LayerValidator& validatorIn) :
+    const LayerValidator& validatorIn)
+try :
     WeightTensor{ dimensions, dataMode, buffer, validatorIn },
     Count{ Dimensions.at(GNA_DIM_N) },
     CoefficientCount{ Dimensions.at(GNA_DIM_W) }
 {
     // validate buffer size with padding
-    if (GNA_DATA_DISABLED != Mode)
+    if (Gna2TensorModeDisabled != Mode.Mode)
     {
-        const auto kernelMemorySize = HardwareLayerCnn2D::GetKernelMemorySize(
-            validator->HwCapabilities.GetDeviceVersion(), this);
+        const auto kernelMemorySize = HardwareLayerCnn2D::GetKernelMemorySize(this);
         const auto caps = static_cast<const TensorLimits *>(validator->Capabilities);
-        validator->ValidateBufferIfSet(Buffer, kernelMemorySize * Count, caps->Align);
+        validator->ValidateBufferIfSet(Buffer, kernelMemorySize * Count, caps->GetAddressAlign());
     }
-
-    if (INTEL_CONVOLUTIONAL_1D == validator->Operation &&
-        Gna2DataTypeInt16 == Mode.Type)
-    {
-        Expect::InRange(at(GNA_DIM_W),
-            CNN_N_KERNEL_ELEMENTS_PER_DIMENSION_MIN,
-            CNN_1D_N_KERNEL_ELEMENTS_PER_DIMENSION_MAX / 2,
-            Gna2StatusCnnErrorConvFltVolume);
-    }
+}
+catch (GnaException&)
+{
+    GnaModelErrorException::DispatchAndFill(FilterOperandIndex);
 }
 
 std::unique_ptr<const FiltersTensor> FiltersTensor::Create(const Gna2Tensor& filtersTensor, const LayerValidator& validatorIn)
 {
-    std::unique_ptr<const FiltersTensor> filters;
-    const std::function<void()> command = [&]()
+    auto const buildCommand = [&]()
     {
-        try // 1D CNN in new arch
-        {
-            auto const validator1D = LayerValidator{ validatorIn, INTEL_CONVOLUTIONAL_1D };
-            filters = std::make_unique<const FiltersTensor>(
-                Shape::Create(filtersTensor.Shape, GNA_TENSOR_NHWD),
-                GetDataMode(filtersTensor),
-                filtersTensor.Data,
-                validator1D);
-        }
-        catch (const GnaException&) // try 2D CNN in new arch
-        {
-            filters = std::make_unique<const FiltersTensor>(
-                Shape::Create(filtersTensor.Shape, GNA_TENSOR_NHWD),
-                GetDataMode(filtersTensor),
-                filtersTensor.Data,
-                validatorIn);
-        }
+        return std::make_unique<const FiltersTensor>(
+            Shape::Create(filtersTensor.Shape, GNA_TENSOR_NHWD),
+            GetDataMode(filtersTensor),
+            filtersTensor.Data,
+            validatorIn);
     };
-    ModelErrorHelper::ExecuteForModelItem(command, FilterOperandIndex);
-    return filters;
+    return ModelErrorHelper::ExecuteForModelItem(buildCommand, FilterOperandIndex);
 }
 
 const FullCapabilitiesMap ConvolutionFunction::strideLimits
 {
     {INTEL_CONVOLUTIONAL, {
-        { GNA_1_0, std::make_shared<ComponentLimits>(ComponentLimits(
+        { Gna2DeviceGeneration1_0, std::make_shared<ComponentLimits>(ComponentLimits(
             {GNA_TENSOR_W},
-            { { GNA_DIM_W, { 1, CNN_N_FLT_COEFF_MAX, 1, Gna2StatusCnnErrorConvFltStride}}}))}
+            { { GNA_DIM_W, { 1, CnnCaps::Filter1DElementsMax, 1, Gna2StatusCnnErrorConvFltStride}}}))}
     }},
 };
 
@@ -96,7 +77,8 @@ ConvolutionFunction::ConvolutionFunction(const KernelMap<ConvolutionKernel>& ker
     OutputsPerFilterCount = 1;
     for (const auto& dim : Stride->Dimensions)
     {
-        Expect::InRange(dim.second, ui32_1, Filters->at(dim.first), Gna2StatusXnnErrorLyrCfg);
+
+        Expect::InRange(dim.second, 1u, Filters->at(dim.first), Gna2StatusXnnErrorLyrCfg);
         Output[dim.first] =
             (input->Dimensions.at(dim.first) - Filters->at(dim.first)) / dim.second + 1;
         OutputsPerFilterCount *= Output[dim.first];
@@ -112,7 +94,7 @@ ConvolutionFunction::ConvolutionFunction(const KernelMap<ConvolutionKernel>& ker
 
     hiddenConfig = std::make_unique<ConvolutionConfig>(Stride->at(GNA_DIM_W), OutputsPerFilterCount,
         Filters->at(GNA_DIM_N), Filters->at(GNA_DIM_W),
-        input->Buffer, Filters->Buffer, Biases->Buffer, output->Buffer, Biases->Mode, Filters->Mode);
+        input->Buffer, Filters->Buffer, Biases->Buffer, output->Buffer, Biases->Mode.Size, Filters->Mode.Size);
 }
 
 std::unique_ptr<const ConvolutionConfig> ConvolutionFunction::GetRequestConfig(const BaseAddress& inputs, const BaseAddress& outputs) const
@@ -140,7 +122,7 @@ std::unique_ptr<const ConvolutionFunction> ConvolutionFunction::finalizeCreation
 {
     return std::make_unique<const ConvolutionFunction>(
         AccelerationDetector::GetKernelMap<ConvolutionKernel>(
-            static_cast<kernel_op>(INTEL_CONVOLUTIONAL), KernelMode{ input->Mode.Value }),
+            static_cast<kernel_op>(INTEL_CONVOLUTIONAL), KernelMode{ input->Mode }),
         input, output, std::move(filters), std::move(biases), std::move(stride));
 }
 
@@ -152,38 +134,22 @@ try
     return std::make_unique<const FiltersTensor>(Shape::Create(apiFilters.Shape, GNA_TENSOR_NW),
         Tensor::GetDataMode(apiFilters), apiFilters.Data, validatorIn);
 }
-catch(GnaException& e)
+catch(GnaException&)
 {
-    ModelErrorHelper::SetOperandIndexRethrow(e, FilterOperandIndex);
+    GnaModelErrorException::DispatchAndFill(FilterOperandIndex);
     throw;
-}
-
-std::unique_ptr<const FiltersTensor> ConvolutionFunction::createFilters(const nn_layer_conv& cnn,
-    const LayerValidator& validatorIn)
-{
-    return std::make_unique<const FiltersTensor>(Shape(GNA_TENSOR_NWH, cnn.nFilters, cnn.nFilterCoefficients, 0u),
-        cnn.nBytesFilterCoefficient, cnn.pFilters, validatorIn);
 }
 
 std::unique_ptr<const Component> ConvolutionFunction::createStride(const Gna2Operation & apiOperation,
     const LayerValidator & validatorIn)
 {
-    std::unique_ptr<const Component> strideCreated;
-    const std::function<void()> command = [&]()
+    auto const command = [&]()
     {
         const auto& strideShape = ModelWrapper::GetParameter<Gna2Shape>(apiOperation, ParameterIndexConvolutionStride);
         const Shape stride{ GNA_TENSOR_W, strideShape.Dimensions[0] };
-        strideCreated = std::make_unique<const Component>(stride, Validator{ validatorIn, strideLimits });
+        return std::make_unique<const Component>(stride, Validator{ validatorIn, strideLimits }, true, ConvolutionStrideParamIndex);
     };
-    ModelErrorHelper::ExecuteForModelItem(command, GNA2_DISABLED, ConvolutionStrideParamIndex);
-    return strideCreated;
-}
-
-std::unique_ptr<const Component> ConvolutionFunction::createStride(const nn_layer_conv & cnn,
-    const LayerValidator & validatorIn)
-{
-    const Shape stride{ GNA_TENSOR_W, cnn.nFeatureMaps * cnn.nFeatureMapColumns };
-    return std::make_unique<const Component>(stride, Validator{ validatorIn, strideLimits });
+    return ModelErrorHelper::ExecuteForModelItem(command, Gna2DisabledU32, ConvolutionStrideParamIndex);
 }
 
 std::unique_ptr<const BiasTensor> ConvolutionFunction::createBiases(const Gna2Operation & apiOperation,
@@ -194,17 +160,10 @@ try
     return std::make_unique<const BiasTensor>(Shape::Create(apiBias.Shape, GNA_TENSOR_N),
         0, Tensor::GetDataMode(apiBias), apiBias.Data, validatorIn);
 }
-catch (GnaException& e)
+catch (GnaException&)
 {
-    ModelErrorHelper::SetOperandIndexRethrow(e, BiasOperandIndex);
+    GnaModelErrorException::DispatchAndFill(BiasOperandIndex);
     throw;
-}
-
-std::unique_ptr<const BiasTensor> ConvolutionFunction::createBiases(const nn_layer_conv & cnn,
-    const LayerValidator & validatorIn)
-{
-    return  std::make_unique<const BiasTensor>(Shape(GNA_TENSOR_N, cnn.nFilters),
-        0, cnn.nBytesBias, cnn.pBiases, validatorIn);
 }
 
 void ConvolutionFunction::expectValid(const Gna2Operation& apiOperation)
@@ -212,19 +171,9 @@ void ConvolutionFunction::expectValid(const Gna2Operation& apiOperation)
     const auto& apiInput = ModelWrapper::GetEnabledOperand(apiOperation, InputOperandIndex);
     auto const biasModeIndex = ModelWrapper::GetOperationInfo(apiOperation.Type, ParameterIndexBiasMode);
     const auto biasMode = ModelWrapper::GetOptionalParameter<Gna2BiasMode>(apiOperation, biasModeIndex, Gna2BiasModeDefault);
-    const std::function<void()> command = [&]()
-    {
-        ModelErrorHelper::ExpectInSet(biasMode, { Gna2BiasModeDefault }, Gna2ItemTypeParameter);
-    };
-    ModelErrorHelper::ExecuteForModelItem(command, GNA2_DISABLED, static_cast<int32_t>(biasModeIndex));
+    auto const ctx = ModelItem{ Gna2ItemTypeParameter, Gna2DisabledU32, biasModeIndex };
+    ModelErrorHelper::ExpectInSet(biasMode, { Gna2BiasModeDefault }, ctx);
 
     const auto featureCount = ModelWrapper::ShapeGetNumberOfElements(&apiInput.Shape);
-    Expect::True(featureCount >= CNN_N_FLT_COEFF_MIN, Gna2StatusXnnErrorLyrCfg);
-}
-
-void ConvolutionFunction::expectValid(const nn_layer_conv& cnn)
-{
-    const auto featureCount = cnn.nFeatureMaps * cnn.nFeatureMapRows * cnn.nFeatureMapColumns;
-    Expect::True(featureCount >= CNN_N_FLT_COEFF_MIN, Gna2StatusXnnErrorLyrCfg);
-    Expect::InRange(cnn.nFilterRows, ui32_1, CNN_N_FLT_COEFF_MAX, Gna2StatusXnnErrorLyrCfg);
+    Expect::True(featureCount >= CnnCaps::Filter1DElementsMin, Gna2StatusXnnErrorLyrCfg);
 }

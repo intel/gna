@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gmm.h"
 #include "kernel-gmm.h"
@@ -9,14 +9,23 @@
 #include "KernelArguments.h"
 #include "KernelMacros.h"
 
-#include "gna-api-types-gmm.h"
-
 #define gmmMaxMix8KernelImpl KERNEL(gmmMaxMix8KernelImpl)
 #define gmmMaxMix16KernelImpl KERNEL(gmmMaxMix16KernelImpl)
 #define gmmMaxMix8ActiveListKernelImpl KERNEL(gmmMaxMix8ActiveListKernelImpl)
 #define gmmMaxMix16ActiveListKernelImpl KERNEL(gmmMaxMix16ActiveListKernelImpl)
 #define checkScoresSaturation KERNEL(checkScoresSaturation)
 #define calculateOffsets KERNEL(calculateOffsets)
+
+#if OPT_LEVEL > 1
+/** Size of memory alignment for feature vectors */
+constexpr uint32_t GMM_FV_MEM_ALIGN = 64;
+
+/** Maximum number of feature vectors */
+constexpr uint32_t GMM_FV_COUNT_MAX = 8;
+#endif
+
+/** Gaussian Constants width in bytes */
+constexpr uint32_t GMM_CONSTANTS_SIZE = 4;
 
 inline void checkScoresSaturation(const uint32_t& nGMMs, const uint32_t& nVectors, const uint32_t * pS,
     const uint32_t& maximumScore, uint32_t& nSaturated)
@@ -32,7 +41,7 @@ inline void checkScoresSaturation(const uint32_t& nGMMs, const uint32_t& nVector
     }
 }
 
-inline void calculateOffsets(GmmConfig * const & gmmConfig, uint32_t * const & output,
+inline void calculateOffsets(GmmConfig const * const & gmmConfig, uint32_t * const & output,
     uint32_t & j, uint32_t & k, GmmConfig & gmm)
 {
     gmm.Means = gmmConfig->Means + k * gmmConfig->MeanSetOffsetSize;
@@ -43,11 +52,11 @@ inline void calculateOffsets(GmmConfig * const & gmmConfig, uint32_t * const & o
 
 void gmmMaxMix8ActiveListKernelImpl(ExecutionKernelConfig<GmmConfig> const * const config, AffineConfigAl al)
 {
-    auto const gmmConfig = &config->RequestConfig->Transform;
+    auto const gmmConfig = &config->RequestConfig.Transform;
     auto const * const input = reinterpret_cast<uint8_t *>(
-        config->RequestConfig->Buffers[GNA::InputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::InputOperandIndex]);
     auto * const output = reinterpret_cast<uint32_t *>(
-        config->RequestConfig->Buffers[GNA::OutputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::OutputOperandIndex]);
     auto const indices = al.indices;
     auto const StateCount = al.count;
     uint32_t j, k;
@@ -187,11 +196,11 @@ void gmmMaxMix8ActiveListKernelImpl(ExecutionKernelConfig<GmmConfig> const * con
 
 void gmmMaxMix16ActiveListKernelImpl(ExecutionKernelConfig<GmmConfig> const * const config, AffineConfigAl al)
 {
-    auto const gmmConfig = &config->RequestConfig->Transform;
+    auto const gmmConfig = &config->RequestConfig.Transform;
     auto const * const input = reinterpret_cast<uint8_t *>(
-        config->RequestConfig->Buffers[GNA::InputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::InputOperandIndex]);
     auto * const output = reinterpret_cast<uint32_t *>(
-        config->RequestConfig->Buffers[GNA::OutputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::OutputOperandIndex]);
     auto const indices = al.indices;
     auto const StateCount = al.count;
     uint32_t i, j, k;
@@ -219,11 +228,11 @@ void gmmMaxMix16ActiveListKernelImpl(ExecutionKernelConfig<GmmConfig> const * co
 
 void gmmMaxMix8KernelImpl(ExecutionKernelConfig<GmmConfig> const * const config)
 {
-    auto const gmmConfig = &config->RequestConfig->Transform;
+    auto const gmmConfig = &config->RequestConfig.Transform;
     auto const * const input = reinterpret_cast<uint8_t *>(
-        config->RequestConfig->Buffers[GNA::InputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::InputOperandIndex]);
     auto * const output = reinterpret_cast<uint32_t *>(
-        config->RequestConfig->Buffers[GNA::OutputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::OutputOperandIndex]);
     uint32_t j;
     auto gmm = *gmmConfig;
 
@@ -342,13 +351,13 @@ void gmmMaxMix8KernelImpl(ExecutionKernelConfig<GmmConfig> const * const config)
         output, gmmConfig->MaxScore, *config->SaturationCount);
 }
 
-void gmmMaxMix16KernelImpl(ExecutionKernelConfig<GmmConfig> const * const config)
+void gmmMaxMix16KernelImpl(ExecutionKernelConfig<GmmConfig> const  * const config)
 {
-    auto const gmmConfig = &config->RequestConfig->Transform;
+    auto const gmmConfig = &config->RequestConfig.Transform;
     auto const * const input = reinterpret_cast<uint8_t *>(
-        config->RequestConfig->Buffers[GNA::InputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::InputOperandIndex]);
     auto * const output = reinterpret_cast<uint32_t *>(
-        config->RequestConfig->Buffers[GNA::OutputOperandIndex]);
+        config->RequestConfig.Buffers[GNA::OutputOperandIndex]);
     uint32_t i, j;
     auto gmm = *gmmConfig;
 

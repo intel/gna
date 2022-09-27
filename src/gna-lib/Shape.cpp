@@ -1,18 +1,17 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Shape.h"
 
+#include "Expect.h"
 #include "GnaException.h"
 #include "ModelError.h"
 
 #include "gna2-common-api.h"
-#include "gna-api-types-xnn.h"
 
-#include <array>
-#include <cstddef>
+#include<algorithm>
 #include <vector>
 
 using namespace GNA;
@@ -22,18 +21,6 @@ Shape::Shape(ShapeMap && mapIn, gna_tensor_order order) :
     LayoutOrder{ order },
     Order{ order }
 {}
-
-Shape::Shape(const gna_3d_dimensions shape) :
-    Shape{ GNA_TENSOR_WHD, shape.width, shape.height, shape.depth }
-{}
-
-Shape & Shape::operator=(const Shape & right)
-{
-    ShapeMap::operator=(static_cast<ShapeMap>(right));
-    this->Order = right.Order;
-    this->LayoutOrder = right.LayoutOrder;
-    return (*this);
-}
 
 uint32_t & Shape::operator[](char dimension)
 {
@@ -88,20 +75,6 @@ ShapeMap Shape::Create(const std::vector<uint32_t> && dimensions, const gna_tens
     return shape;
 }
 
-Shape::operator gna_3d_dimensions const() const
-{
-    if (this->count(GNA_DIM_W) > 0 && this->count(GNA_DIM_H) > 0)
-    {
-        if (this->count(GNA_DIM_D) > 0)
-        {
-            return gna_3d_dimensions{at(GNA_DIM_W), at(GNA_DIM_H), at(GNA_DIM_D)};
-        }
-        return gna_3d_dimensions{at(GNA_DIM_W), at(GNA_DIM_H), 0};
-    }
-
-    throw GnaException(Gna2StatusXnnErrorLyrInvalidTensorOrder);
-}
-
 Shape::operator ApiShape() const
 {
     ApiShape shape = {};
@@ -133,10 +106,9 @@ uint32_t Shape::GetNumberOfElements() const
     return counter;
 }
 
-ModelValue Shape::AsModelValue(char dimension) const
+ModelValue Shape::AsModelValue(char dimension, uint32_t operandIndex) const
 {
-    ModelValue mv{ at(dimension) };
-    return mv.SetDimension(LayoutOrder.GetApiIndex(dimension));
+    return ModelValue{ at(dimension), LayoutOrder.GetApiIndex(dimension), operandIndex };
 }
 
 void Shape::ExpectFits(const Shape& envelope) const
@@ -147,9 +119,9 @@ void Shape::ExpectFits(const Shape& envelope) const
     });
 }
 
-void Shape::ExpectEqual(const Shape& reference) const
+void Shape::ExpectEqual(const Shape& ref) const
 {
-    ProcessEachDimension(reference, [](auto l, auto r)
+    ProcessEachDimension(ref, [](auto l, auto r)
     {
         ModelErrorHelper::ExpectEqual(l, r, Gna2ItemTypeShapeDimensions);
     });
@@ -159,6 +131,32 @@ void Shape::ExpectEqualInverted(const ApiShape & source) const
 {
     const auto sourceShape = Create(source, this->Order);
     sourceShape.ExpectEqual(*this);
+}
+
+void Shape::ExpectSquare() const
+{
+    if (size() <= 1) return;
+    auto dim1 = this->begin()->second; // removed const as gcc w/a
+    auto ctx = ModelItem{ Gna2ItemTypeShapeDimensions };
+        ctx.ShapeDimensionIndex = LayoutOrder.GetApiIndex(this->begin()->first);
+    std::for_each(begin(), end(),
+        [dim1, &ctx](auto const & l)
+    {
+        ModelErrorHelper::ExpectEqual(l.second, dim1, ctx);
+    });
+}
+
+bool Shape::IsSquare() const
+{
+    try
+    {
+        ExpectSquare();
+        return true;
+    }
+    catch (GnaModelErrorException&)
+    {
+        return false;
+    }
 }
 
 void Shape::ProcessEachDimension(const Shape& right, const std::function<void(uint32_t, uint32_t)>& process) const

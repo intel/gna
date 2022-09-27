@@ -1,5 +1,5 @@
-#@copyright (C) 2020-2021 Intel Corporation
-#SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright (C) 2019-2022 Intel Corporation
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 set(GNA_COMPILE_FLAGS)
 set(GNA_COMPILE_ERROR_FLAGS)
@@ -151,6 +151,8 @@ else()
   elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     if(${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel")
       set(GNA_COMPILE_FLAGS_RELEASE ${GNA_COMPILE_FLAGS_RELEASE} -ipo)
+    elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+      set(GNA_COMPILE_FLAGS_RELEASE ${GNA_COMPILE_FLAGS_RELEASE} -flto=thin)
     else()
       set(GNA_COMPILE_FLAGS_RELEASE ${GNA_COMPILE_FLAGS_RELEASE} -flto -fno-fat-lto-objects)
     endif()

@@ -1,13 +1,15 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include <cstdint>
 #include <memory>
 #include <string>
+
+#include "gna2-common-impl.h"
 
 struct GNA3_AdaptHW;
 struct GNA3_LyrDesc;
@@ -35,45 +37,25 @@ struct HwUarchParams
 class HwModuleInterface
 {
 public:
-    /**
-     * Create HW Module for underlying OS.
-     * 
-     * @param moduleName Name of library without path and extension.
-     */
-    static std::unique_ptr<HwModuleInterface const> Create(char const* moduleName);
+    HwModuleInterface(DeviceVersion deviceVersion);
+    ~HwModuleInterface() = default;
 
     HwModuleInterface(const HwModuleInterface&) = delete;
     HwModuleInterface& operator=(const HwModuleInterface&) = delete;
-    virtual ~HwModuleInterface() = default;
 
     HwUarchParams GetCnnParams(ConvolutionFunction2D const* cnnIn, PoolingFunction2D const* poolingIn,
         const DataMode& outputMode, bool is1D) const;
 
+    bool IsModuleLoaded() const;
 protected:
-    HwModuleInterface() = default;
-
-
     HwUarchParams Get1DParams(ConvolutionFunction2D const* cnnIn, PoolingFunction2D const* poolingIn,
         const DataMode& outputMode) const;
     HwUarchParams Get2DParams(ConvolutionFunction2D const* cnnIn, PoolingFunction2D const* poolingIn,
         const DataMode& outputMode) const;
     static int32_t GetPoolingMode(PoolingFunction2D const* poolingIn);
 
-    typedef struct GNA3_LyrDesc* (*CreateLDFunction)();
-    typedef void(*FreeLDFunction)(struct GNA3_LyrDesc* LD);
-    typedef bool(*FillLDFunction)(struct GNA3_LyrDesc* LD);
+    bool SetConfig(DeviceVersion deviceVersion);
 
-    CreateLDFunction CreateLD = nullptr;
-    FreeLDFunction FreeLD = nullptr;
-    FillLDFunction FillLD = nullptr;
-
-    std::string fullName;
-
-    void ImportAllSymbols();
-    void* GetSymbolAddress(const std::string& symbolName);
-    bool libraryLoadSuccess = false;
-    bool symbolImportSuccess = false;
-private:
-    virtual void* getSymbolAddress(const std::string& symbolName) = 0;
+    bool isModuleLoaded = false;
 };
 }

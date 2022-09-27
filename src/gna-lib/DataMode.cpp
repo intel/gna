@@ -1,9 +1,12 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "DataMode.h"
+
+#include "GnaException.h"
+#include "ModelError.h"
 
 #include "gna2-model-api.h"
 #include "gna2-model-impl.h"
@@ -12,153 +15,93 @@
 
 using namespace GNA;
 
-namespace GNA
+uint32_t DataMode::GetSize(DataType type)
 {
-
-template<>
-const std::map<const gna_data_mode, const uint32_t>& DataMode::GetSizes()
-{
-    static const std::map<const gna_data_mode, const uint32_t> sizes =
+    try
     {
-        {GNA_INT8, 1},
-        {GNA_INT16, 2},
-        {GNA_INT32, 4},
-        {GNA_UINT8, 1},
-        {GNA_UINT16, 2},
-        {GNA_UINT32, 4},
-        {GNA_UINT64, 8},
-        {GNA_DATA_RICH_FORMAT, 8},
-        {GNA_DATA_CONSTANT_SCALAR, 4},
-        {GNA_DATA_ACTIVATION_DISABLED, 4},
-        {GNA_DATA_DISABLED, GNA_DATA_NOT_SUPPORTED},
-    };
-    return sizes;
-}
+        static const std::map<const DataType, const uint32_t> sizes =
+        {
+            {Gna2DataTypeNone, 0},
+            {Gna2DataTypeBoolean, 1},
+            {Gna2DataTypeInt4, 1},
+            {Gna2DataTypeInt8, 1},
+            {Gna2DataTypeInt16, 2},
+            {Gna2DataTypeInt32, 4},
+            {Gna2DataTypeInt64, 8},
+            {Gna2DataTypeUint4, 1},
+            {Gna2DataTypeUint8, 1},
+            {Gna2DataTypeUint16, 2},
+            {Gna2DataTypeUint32, 4},
+            {Gna2DataTypeUint64, 8},
+            {Gna2DataTypeCompoundBias, 8},
+            {Gna2DataTypePwlSegment, 8},
+            {Gna2DataTypeWeightScaleFactor, 8},
+        };
 
-template<>
-const std::map<const DataType, const uint32_t>& DataMode::GetSizes()
-{
-    static const std::map<const DataType, const uint32_t> sizes =
+        return sizes.at(type);
+    }
+    catch (const std::exception&)
     {
-        {Gna2DataTypeNone, 0},
-        {Gna2DataTypeBoolean, 1},
-        {Gna2DataTypeInt4, 1},
-        {Gna2DataTypeInt8, 1},
-        {Gna2DataTypeInt16, 2},
-        {Gna2DataTypeInt32, 4},
-        {Gna2DataTypeInt64, 8},
-        {Gna2DataTypeUint4, 1},
-        {Gna2DataTypeUint8, 1},
-        {Gna2DataTypeUint16, 2},
-        {Gna2DataTypeUint32, 4},
-        {Gna2DataTypeUint64, 8},
-        {Gna2DataTypeCompoundBias, 8},
-        {Gna2DataTypePwlSegment, 8},
-        {Gna2DataTypeWeightScaleFactor, 8},
-    };
-    return sizes;
+        throw GnaModelErrorException(Gna2ItemTypeOperandType, Gna2ErrorTypeNotInSet, type);
+    }
 }
 
-}
-DataType DataMode::TypeFromDataMode(const gna_data_mode dataMode)
+TensorMode DataMode::ModeFromType(DataType type)
 {
-    static const std::map<const gna_data_mode, const DataType> types =
+    try
     {
-        {GNA_DATA_NOT_SUPPORTED, Gna2DataTypeNone},
-        {GNA_INT8, Gna2DataTypeInt8},
-        {GNA_INT16, Gna2DataTypeInt16},
-        {GNA_INT32, Gna2DataTypeInt32},
-        {GNA_UINT8, Gna2DataTypeUint8},
-        {GNA_UINT16, Gna2DataTypeUint16},
-        {GNA_UINT32, Gna2DataTypeUint32},
-        {GNA_UINT64, Gna2DataTypeUint64},
-        {GNA_DATA_RICH_FORMAT, Gna2DataTypeCompoundBias},
-        {GNA_DATA_CONSTANT_SCALAR, Gna2DataTypeInt32},
-        {GNA_DATA_ACTIVATION_DISABLED, Gna2DataTypeNone},
-        {GNA_DATA_DISABLED, Gna2DataTypeNone},
-    };
-    return types.at(dataMode);
-}
-
-TensorMode DataMode::ModeFromDataMode(const gna_data_mode dataMode)
-{
-    static const std::map<const gna_data_mode, const TensorMode> types =
+        static const std::map<const DataType, const TensorMode> types =
+        {
+            {Gna2DataTypeNone, Gna2TensorModeDisabled},
+            {Gna2DataTypeBoolean, Gna2TensorModeDefault},
+            {Gna2DataTypeInt4,  Gna2TensorModeDefault},
+            {Gna2DataTypeInt8,  Gna2TensorModeDefault},
+            {Gna2DataTypeInt16, Gna2TensorModeDefault},
+            {Gna2DataTypeInt32, Gna2TensorModeDefault},
+            {Gna2DataTypeInt64, Gna2TensorModeDefault},
+            {Gna2DataTypeUint4, Gna2TensorModeDefault},
+            {Gna2DataTypeUint8, Gna2TensorModeDefault},
+            {Gna2DataTypeUint16, Gna2TensorModeDefault},
+            {Gna2DataTypeUint32, Gna2TensorModeDefault},
+            {Gna2DataTypeUint64, Gna2TensorModeDefault},
+            {Gna2DataTypeCompoundBias, Gna2TensorModeDefault},
+            {Gna2DataTypePwlSegment, Gna2TensorModeDefault},
+            {Gna2DataTypeWeightScaleFactor, Gna2TensorModeDefault},
+        };
+        return types.at(type);
+    }
+    catch (const std::exception&)
     {
-        {GNA_DATA_NOT_SUPPORTED, Gna2TensorModeDisabled},
-        {GNA_INT8, Gna2TensorModeDefault},
-        {GNA_INT16, Gna2TensorModeDefault},
-        {GNA_INT32, Gna2TensorModeDefault},
-        {GNA_UINT8, Gna2TensorModeDefault},
-        {GNA_UINT16, Gna2TensorModeDefault},
-        {GNA_UINT32, Gna2TensorModeDefault},
-        {GNA_UINT64, Gna2TensorModeDefault},
-        {GNA_DATA_RICH_FORMAT, Gna2TensorModeDefault},
-        {GNA_DATA_CONSTANT_SCALAR, Gna2TensorModeConstantScalar},
-        {GNA_DATA_ACTIVATION_DISABLED, Gna2TensorModeDisabled},
-        {GNA_DATA_DISABLED, Gna2TensorModeDisabled},
-    };
-    return types.at(dataMode);
+        throw GnaModelErrorException(Gna2ItemTypeOperandType, Gna2ErrorTypeNotInSet, type);
+    }
 }
 
-gna_data_mode DataMode::ModeFromDataMode(const DataType dataType)
+DataType DataMode::TypeFromMode(DataType type, TensorMode mode)
 {
-    static const std::map<const DataType, const gna_data_mode> types =
+    ModelErrorHelper::ExpectInSet(mode,
+        { Gna2TensorModeDefault, Gna2TensorModeExternalBuffer, Gna2TensorModeDisabled },
+        Gna2ItemTypeOperandMode);
+    switch (mode)
     {
-        {Gna2DataTypeNone, GNA_DATA_DISABLED},
-        {Gna2DataTypeBoolean, GNA_DATA_NOT_SUPPORTED},
-        {Gna2DataTypeInt4, GNA_DATA_NOT_SUPPORTED},
-        {Gna2DataTypeInt8, GNA_INT8},
-        {Gna2DataTypeInt16, GNA_INT16},
-        {Gna2DataTypeInt32, GNA_INT32},
-        {Gna2DataTypeUint4, GNA_DATA_NOT_SUPPORTED},
-        {Gna2DataTypeUint8, GNA_UINT8},
-        {Gna2DataTypeUint16, GNA_UINT16},
-        {Gna2DataTypeUint32, GNA_UINT32},
-        {Gna2DataTypeUint64, GNA_UINT64},
-        {Gna2DataTypeCompoundBias, GNA_DATA_RICH_FORMAT},
-        {Gna2DataTypePwlSegment, GNA_DATA_RICH_FORMAT},
-        {Gna2DataTypeWeightScaleFactor, GNA_DATA_RICH_FORMAT},
-    };
-    return types.at(dataType);
+    case Gna2TensorModeDisabled:
+        return Gna2DataTypeNone;
+    case Gna2TensorModeConstantScalar:
+        return Gna2DataTypeInt4;
+    default:
+        return type;
+    }
 }
 
-DataMode::DataMode(const gna_data_mode dataMode) :
-    Value{ dataMode },
-    Type{ TypeFromDataMode(dataMode) },
-    Mode{ ModeFromDataMode(dataMode) },
-    Size{ ToSize<uint32_t>(Value) }
+DataMode::DataMode(DataType type) :
+    Type{ type },
+    Mode{ ModeFromType(type) },
+    Size{ GetSize(Type) }
 {
 }
 
-DataMode::DataMode(const uint32_t dataMode) :
-    DataMode(static_cast<gna_data_mode>(dataMode))
-{
-}
-
-DataMode::DataMode(const DataType dataType, const TensorMode tensorMode) :
-    Value{ ModeFromDataMode(dataType) },
-    Type{ dataType },
+DataMode::DataMode(DataType type, TensorMode tensorMode) :
+    Type{ TypeFromMode(type, tensorMode) },
     Mode{ tensorMode },
-    Size{ ToSize<uint32_t>(dataType) }
+    Size{ GetSize(Type) }
 {
-}
-
-bool GNA::operator ==(const gna_data_mode& left, const DataMode& right)
-{
-    return right.Value == left;
-}
-
-bool GNA::operator !=(const gna_data_mode& left, const DataMode& right)
-{
-    return right.Value != left;
-}
-
-bool GNA::operator ==(Gna2DataType left, const DataMode& right)
-{
-    return right.Type == left;
-}
-
-bool GNA::operator !=(Gna2DataType left, const DataMode& right)
-{
-    return right.Type != left;
 }

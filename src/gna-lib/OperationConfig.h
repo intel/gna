@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -12,25 +12,20 @@
 #include "ModelWrapper.h"
 
 #include "gna2-model-api.h"
-#include "common.h"
 
 namespace GNA
 {
 class OperationConfig
 {
 public:
-    OperationConfig(const nn_layer& layer);
-
     OperationConfig(const Gna2Operation& apiOperation);
 
     static Gna2PoolingMode GetPoolingMode(const Gna2Operation& operation);
     static bool IsCNN1D(const Gna2Operation & operation);
 
-    static bool IsMultibias(const nn_layer& layer);
     static bool IsMultibias(const Gna2Operation& operation);
 
     static Gna2OperationType GetOperationType(const Gna2Operation& operation);
-    static Gna2OperationType GetOperationType(const nn_layer& layer);
 
     kernel_op GetKernelOperation() const;
     TransformOperation GetTransformOperation() const;
@@ -44,38 +39,8 @@ public:
         return ModelWrapper::GetParameter<T>(*Operation, index);
     }
 
-    template<typename Target, typename Source>
-    static std::unique_ptr<const Target> CreateCnnTarget(
-        const Source& source, const LayerValidator& validator, const FullCapabilitiesMap& caps)
-    {
-        try
-        {
-            // 1D CNN in new arch
-            auto const validator1D = LayerValidator{ validator, INTEL_CONVOLUTIONAL_1D };
-            return std::make_unique<const Target>(source,
-                Validator{ validator1D, caps });
-        }
-        catch (const GnaException&)
-        {
-            // try 2D CNN in new arch
-            return std::make_unique<const Target>(source,
-                Validator{ validator, caps });
-        }
-    }
-
     static std::unique_ptr<const Component> CreateCnnComponent(const Shape& shape,
-        const LayerValidator& validator, const FullCapabilitiesMap & caps)
-    {
-        if (shape.empty())
-        {
-            return CreateCnnTarget<Component, Shape>(
-                Shape{ GNA_TENSOR_HW, 0u, 0u }, validator, caps);
-        }
-        else
-        {
-            return CreateCnnTarget<Component, Shape>(shape, validator, caps);
-        }
-    }
+        const LayerValidator& validator, const FullCapabilitiesMap & caps, const uint32_t parameterIndex);
 
     Gna2OperationType OperationType;
     Gna2Tensor WeightsTensor;
@@ -94,15 +59,10 @@ public:
     Gna2Operation const * const Operation;
 
 protected:
-    template<class T>
-    void InitOperationConfig(const T& operation)
+    void InitOperationConfig(const Gna2Operation& operation)
     {
         OperationType = GetOperationType(operation);
         BiasesTensor = GetBiases(operation);
-        if (BiasesTensor.Mode != Gna2TensorModeDisabled)
-        {
-            ModelErrorHelper::ExpectNotNull(BiasesTensor.Data, Gna2ItemTypeOperandData, BiasOperandIndex);
-        }
 
         if (isAffine(operation))
         {
@@ -133,99 +93,32 @@ protected:
         }
     }
     void InitPooling(const Gna2Operation& operation);
-    void InitPooling(const nn_layer& layer);
 
     void InitMultibias(const Gna2Operation& operation);
-    void InitMultibias(const nn_layer& layer);
 
 private:
-    static Shape TryGetParamShape(const Gna2Operation & operation, OperationInfoKey parameter);
     static Shape TryGetParamShape(const Gna2Operation & operation, uint32_t parameterIndex);
 
-    static const nn_layer_cnn2d* CastToCnn2DDetails(const nn_layer& layer);
-
-    static Gna2Tensor GetWeights(const nn_layer& layer);
     static Gna2Tensor GetWeights(const Gna2Operation& operation);
-    static Gna2Tensor GetFilters(const nn_layer& layer);
     static Gna2Tensor GetFilters(const Gna2Operation& operation);
 
-    template<typename T>
-    static Gna2Tensor getWeightsTensor(const nn_layer& layer, const T& affineFunc)
-    {
-        Gna2Tensor a{};
-        a.Type = DataMode(affineFunc.nBytesPerWeight).Type;
-        a.Data = affineFunc.pWeights;
-        a.Mode = Gna2TensorModeDefault;
-        if (layer.operation == INTEL_AFFINE_DIAGONAL)
-        {
-            a.Shape = { 1, layer.nOutputRows };
-            a.Layout[0] = 'H';
-            a.Layout[1] = '\0';
-        }
-        else if (layer.operation == INTEL_RECURRENT)
-        {
-            a.Shape = { 2, layer.nOutputColumns, layer.nInputColumns + layer.nOutputColumns };
-            a.Layout[0] = 'H';
-            a.Layout[1] = 'W';
-            a.Layout[2] = '\0';
-        }
-        else
-        {
-            a.Shape = { 2, layer.nOutputRows, layer.nInputRows };
-            a.Layout[0] = 'H';
-            a.Layout[1] = 'W';
-            a.Layout[2] = '\0';
-        }
-
-        return a;
-    }
-
-    template<typename T>
-    static Gna2Tensor getBiasTensor(const nn_layer& layer, const T& affineFunc)
-    {
-        Gna2Tensor a{};
-        a.Layout[0] = 'H';
-        a.Layout[1] = '\0';
-        a.Type = DataMode(affineFunc.nBytesPerBias).Type;
-        a.Data = affineFunc.pBiases;
-        a.Mode = Gna2TensorModeDefault;
-        a.Shape = { 1, layer.operation == INTEL_RECURRENT
-                        ? layer.nOutputColumns : layer.nOutputRows };
-
-        return a;
-    }
-
     static Gna2BiasMode GetBiasMode(const Gna2Operation& operation);
-    static Gna2BiasMode GetBiasMode(const nn_layer& layer);
     static Gna2Tensor GetBiases(const Gna2Operation& operation);
-    static Gna2Tensor GetBiases(const nn_layer& layer);
 
     static Shape GetStride(const Gna2Operation& operation);
-    static Shape GetStride(const nn_layer& layer);
 
     static uint32_t GetFeedbackDelay(const Gna2Operation& operation);
-    static uint32_t GetFeedbackDelay(const nn_layer& layer);
 
     static Shape GetZeroPadding(const Gna2Operation& operation);
-    static Shape GetZeroPadding(const nn_layer& layer);
 
-    static nn_layer_pool2d GetPoolingImpl(const nn_layer& layer);
-    static Shape GetPoolingStride(const nn_layer_pool2d& pooling);
-    static Shape GetPoolingWindow(const nn_layer_pool2d& pooling);
-    static Shape GetPoolingWindow(const Gna2Operation& operation);
-    static Shape GetPoolingStride(const Gna2Operation& operation);
-    static Gna2PoolingMode GetPoolingMode(const nn_layer_pool2d& pooling);
+    static Shape GetShapeParameterOfMaximal2Dimensions(const Gna2Operation& operation, uint32_t parameterIndex);
 
     static bool hasPooling(const Gna2Operation& operation);
-    static bool hasPooling(const nn_layer& layer);
 
-    static bool isCNN2D(const nn_layer& layer);
     static bool isCNN2D(const Gna2Operation& operation);
 
-    static bool isAffine(const nn_layer& layer);
     static bool isAffine(const Gna2Operation& operation);
 
-    static bool isRecurrent(const nn_layer& layer);
     static bool isRecurrent(const Gna2Operation& operation);
 };
 

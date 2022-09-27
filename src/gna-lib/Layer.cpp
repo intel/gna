@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Layer.h"
 
@@ -25,33 +25,12 @@
 
 using namespace GNA;
 
-std::unique_ptr<Layer> Layer::Create(const nn_layer& layer, const BaseValidator& validatorIn)
-{
-    switch (layer.operation)
-    {
-    case INTEL_AFFINE:
-    case INTEL_AFFINE_DIAGONAL:
-    case INTEL_AFFINE_MULTIBIAS:
-        return std::make_unique<AffineLayer>(layer, validatorIn);
-    case INTEL_CONVOLUTIONAL:
-        return std::make_unique<CnnLayer>(layer, validatorIn);
-    case INTEL_CONVOLUTIONAL_2D:
-        return std::make_unique<ConvolutionalLayer2D>(layer, validatorIn);
-    case INTEL_COPY:
-        return std::make_unique<CopyLayer>(layer, validatorIn);
-    case INTEL_INTERLEAVE:/* FALLTHRU */
-    case INTEL_DEINTERLEAVE:
-        return std::make_unique<TransposeLayer>(layer, validatorIn);
-    case INTEL_RECURRENT:
-        return std::make_unique<RecurrentLayer>(layer, validatorIn);
-    default:
-        throw GnaException(Gna2StatusXnnErrorLyrCfg);
-    }
-}
-
-std::unique_ptr<GNA::Layer> Layer::Create(const Gna2Operation & operation, const BaseValidator & validatorIn)
+std::unique_ptr<Layer> Layer::Create(const Gna2Operation & operation, const BaseValidator & validatorIn)
 {
     ModelWrapper::ExpectOperationValid(operation);
+
+    auto const defaultLayerValidator = LayerValidator{ validatorIn, toLegacy(operation, validatorIn) };
+
     switch (operation.Type)
     {
     case Gna2OperationTypeFullyConnectedAffine:
@@ -61,26 +40,39 @@ std::unique_ptr<GNA::Layer> Layer::Create(const Gna2Operation & operation, const
             ModelWrapper::ExpectParameterAvailable(operation, BiasModeAffineParamIndex);
             ModelWrapper::ExpectParameterAvailable(operation, BiasVectorParamIndex);
         }
-        return std::make_unique<AffineLayer>(operation, validatorIn);
+        return std::make_unique<AffineLayer>(operation, defaultLayerValidator);
     }
     case Gna2OperationTypeElementWiseAffine:
-        return std::make_unique<AffineLayer>(operation, validatorIn);
+        return std::make_unique<AffineLayer>(operation, defaultLayerValidator);
     case Gna2OperationTypeRecurrent:
-        return std::make_unique<RecurrentLayer>(operation, validatorIn);
+        return std::make_unique<RecurrentLayer>(operation, defaultLayerValidator);
     case Gna2OperationTypeCopy:
-        return std::make_unique<CopyLayer>(operation, validatorIn);
+        return std::make_unique<CopyLayer>(operation, defaultLayerValidator);
     case Gna2OperationTypeConvolution:
+    {
         if (CnnLayer::IsForced(operation))
         {
             Log->Message("Processing in Legacy CNN1D enforced mode.\n");
-            return std::make_unique<CnnLayer>(operation, validatorIn);
+            return std::make_unique<CnnLayer>(operation, defaultLayerValidator);
         }
         Log->Message("Processing in New CNN2D mode.\n");
-        return std::make_unique<ConvolutionalLayer2D>(operation, validatorIn);
+        try
+        {
+            // try new CNN using 1D variant
+            auto const validator1D = LayerValidator{ validatorIn, INTEL_CONVOLUTIONAL_1D };
+            return std::make_unique<ConvolutionalLayer2D>(operation, validator1D);
+        }
+        catch (const GnaException&)
+        {
+            // continue to 2D CNN
+            auto const validator2D = LayerValidator{ validatorIn, INTEL_CONVOLUTIONAL_2D };
+            return std::make_unique<ConvolutionalLayer2D>(operation, validator2D);
+        }
+    }
     case Gna2OperationTypeGmm:
-        return std::make_unique<GmmOperation>(operation, validatorIn);
+        return std::make_unique<GmmOperation>(operation, defaultLayerValidator);
     case Gna2OperationTypeTransposition:
-        return std::make_unique<TransposeLayer>(operation, validatorIn);
+        return std::make_unique<TransposeLayer>(operation, defaultLayerValidator);
     default:
         throw GnaModelErrorException(
             Gna2ItemTypeOperationType,
@@ -142,19 +134,18 @@ void Layer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) const
 
         if (layerConfiguration.ActList)
         {
-            outputTransform->ValidateActiveList(*layerConfiguration.ActList);
+            GetOutputTransform().ValidateActiveList(*layerConfiguration.ActList);
         }
     }
 }
 
-DataConfig Layer::GetDataMode() const
+const DataConfig Layer::GetDataMode() const
 {
-    return DataConfig(Input.Mode, GNA_INT16, GNA_INT32, Output.Mode);
+    return dataConfig;
 }
 
 Tensor const & Layer::GetOperand(uint32_t operandIndex) const
 {
-
     switch (operandIndex)
     {
     case InputOperandIndex:
@@ -201,8 +192,8 @@ void Layer::VerifyHas1BInputAnd2BWeight()
     auto const weight = TryGetOperand(WeightOperandIndex);
     if (input &&
         weight &&
-        Gna2DataTypeInt8 == input->Mode &&
-        Gna2DataTypeInt16 == weight->Mode)
+        Gna2DataTypeInt8 == input->Mode.Type &&
+        Gna2DataTypeInt16 == weight->Mode.Type)
     {
         has1BInputAnd2BWeight = true;
     }
@@ -210,15 +201,8 @@ void Layer::VerifyHas1BInputAnd2BWeight()
 
 Tensor const & Layer::getTransformOperand(TransformOperation operation, uint32_t operandIndex) const
 {
-    auto const transform = Transforms.Get(operation);
-    if (transform)
-    {
-        return transform->GetOperand(operandIndex);
-    }
-    else
-    {
-        throw GnaException(Gna2StatusXnnErrorLyrCfg);
-    }
+    auto const & transform = Transforms.Get(operation);
+    return transform.GetOperand(operandIndex);
 }
 
 void Layer::initTransforms(const std::vector<TransformOperation>& transforms,
@@ -229,8 +213,11 @@ void Layer::initTransforms(const std::vector<TransformOperation>& transforms,
         outputTransform = Transforms.Emplace(transform, commonConfig, operationConfig);
         commonConfig.input = outputTransform->Output.get();
     }
+    Expect::NotNull(outputTransform);
 
     inputTransform = Transforms.begin()->get();
+    Expect::NotNull(inputTransform);
+
     if (Output.Buffer)
     {
         outputTransform->SetOutput(Output.Buffer);
@@ -240,11 +227,8 @@ void Layer::initTransforms(const std::vector<TransformOperation>& transforms,
         && outputTransform->Operation != ActivationTransform)
     {
         const auto outType = outputTransform->Output->Mode.Type;
-        const std::function<void()> command = [=]()
-        {
-            ModelErrorHelper::ExpectInSet(outType, { Gna2DataTypeInt32 });
-        };
-        ModelErrorHelper::ExecuteForModelItem(command, OutputOperandIndex);
+        auto const ctx = ModelItem{ Gna2ItemTypeOperandType, OutputOperandIndex };
+        ModelErrorHelper::ExpectInSet(outType, { Gna2DataTypeInt32 }, ctx);
     }
 }
 
@@ -318,6 +302,7 @@ Gna2OperationType AbstractOperation::fromLegacy(const nn_operation& layerType)
         {INTEL_AFFINE_DIAGONAL, Gna2OperationTypeElementWiseAffine},
         {INTEL_AFFINE_MULTIBIAS, Gna2OperationTypeFullyConnectedAffine},
         {INTEL_CONVOLUTIONAL, Gna2OperationTypeConvolution},
+        {INTEL_CONVOLUTIONAL_1D, Gna2OperationTypeConvolution},
         {INTEL_CONVOLUTIONAL_2D, Gna2OperationTypeConvolution},
         {INTEL_COPY, Gna2OperationTypeCopy},
         {INTEL_DEINTERLEAVE, Gna2OperationTypeTransposition},

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -69,28 +69,19 @@ public:
     }
 
     // If pointer is nullptr prints error status code and throws exception.
-    inline static void NotNull(const void* pointer, const Gna2Status error)
+    template<typename T>
+    inline static void NotNull(T const & pointer,
+        const Gna2Status error = Gna2StatusNullArgumentNotAllowed)
     {
-        True(nullptr != pointer, error);
-    }
-
-    // If pointer is nullptr prints error status code and throws exception.
-    inline static void NotNull(const void* pointer)
-    {
-        NotNull(pointer, Gna2StatusNullArgumentNotAllowed);
+        False(pointer == nullptr, error);
     }
 
     // If pointer is NOT nullptr prints error status code and throws exception.
-    inline static void Null(const void* pointer)
-    {
-        True(nullptr == pointer, Gna2StatusNullArgumentRequired);
-    }
-
-    // If pointer is nullptr prints error status code and throws exception.
     template<typename T>
-    inline static void NotNull(std::unique_ptr<T> const & pointer)
+    inline static void Null(T const & pointer,
+        const Gna2Status error = Gna2StatusNullArgumentRequired)
     {
-        True(pointer.operator bool(), Gna2StatusNullArgumentNotAllowed);
+        True(pointer == nullptr, error);
     }
 
     // If pointer is not aligned to alignment prints error status code and throws exception.

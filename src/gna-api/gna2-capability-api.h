@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-capability-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -56,6 +56,19 @@ enum Gna2DeviceGeneration
      Backward compatible with ::Gna2DeviceGeneration1_0.
      */
     Gna2DeviceGeneration2_0 = 0x200,
+
+    /**
+     Fully featured third GNA device generation.
+     Partially compatible with ::Gna2DeviceGeneration2_0.
+     */
+    Gna2DeviceGeneration3_0 = 0x300,
+
+    /**
+     2D CNN enhanced third GNA device generation.
+     Partially compatible with ::Gna2DeviceGeneration2_0.
+     Fully compatible with ::Gna2DeviceGeneration3_0.
+     */
+    Gna2DeviceGeneration3_1 = 0x310,
 };
 
 /**

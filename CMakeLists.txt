@@ -1,17 +1,20 @@
-# @copyright (C) 2020-2021 Intel Corporation
+# Copyright (C) 2018-2022 Intel Corporation
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 # minimum version of CMake
 cmake_minimum_required(VERSION 3.10)
 # global variables
 set(PROJECT_NAME gna-lib)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 set(CXX_STANDARD_REQUIRED ON)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 # project name
 project(${PROJECT_NAME})
+
+# global list of test dependencies
+set(GNA_ALL_TESTS_REGISTERED_TARGETS "" CACHE INTERNAL "")
 
 # main binary path
 set(GNA_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
@@ -36,7 +39,7 @@ endif()
 if(DEFINED ENV{GNA_LIBRARY_VERSION})
   set(GNA_LIBRARY_VER -DGNA_LIBRARY_VERSION_STRING=\"$ENV{GNA_LIBRARY_VERSION}\")
 elseif(NOT DEFINED GNA_LIBRARY_VER)
-  set(GNA_LIBRARY_VER -DGNA_LIBRARY_VERSION_STRING=\"2.X.0.0\")
+  set(GNA_LIBRARY_VER -DGNA_LIBRARY_VERSION_STRING=\"3.0.0.0\")
 endif()
 
 # source path variables
@@ -102,6 +105,33 @@ if(CSCOPE_PATH)
     COMMAND find -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" > cscope.files
     COMMAND cscope -Rqb -i cscope.files
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endif()
+
+# HW C-package module
+option(GNA_BUILD_WITH_HW_MODULE_ENABLED "" OFF)
+
+set(HW_MODULE_PATH)
+set(GNA_HW_LIB_INCLUDE_PATH)
+set(GNA_HW_LIB_ENABLED )
+
+if(${GNA_BUILD_WITH_HW_MODULE_ENABLED})
+  set(HW_MODULE_PATH ${BUILD_DIR}/hw_module)
+  set(HW_MODULE_NAME gnahw)
+
+  set(GNA_HW_LIB_ENABLED ${GNA_HW_LIB_ENABLED} "-DGNA_HW_LIB_ENABLED=1")
+  message("Enabling ${HW_MODULE_NAME} for GNA library")
+  if(NOT EXISTS "${HW_MODULE_PATH}/CMakeLists.txt")
+
+  message(FATAL_ERROR "HW submodule was not initialized properly.\n"
+        "File <${HW_MODULE_PATH}/CMakeLists.txt> not found.\n"
+        "Try using 'git submodule update --init --recursive' to load all submodules.")
+  endif()
+  add_subdirectory(${HW_MODULE_PATH})
+  set_gna_compile_definitions(${HW_MODULE_NAME})
+
+  set(GNA_ALL_TESTS_REGISTERED_TARGETS "${HW_MODULE_NAME};${GNA_ALL_TESTS_REGISTERED_TARGETS}" CACHE INTERNAL "")
+else()
+  message("HW Module 3.0 for GNA library will NOT be used.")
 endif()
 
 add_subdirectory(src/gna-lib/kernels)

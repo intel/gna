@@ -1,19 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
-/* Copyright(c) 2017-2021 Intel Corporation */
+/* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
+/* @copyright 2017-2021 Intel Corporation */
 
 #ifndef _UAPI_GNA_H_
 #define _UAPI_GNA_H_
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
-#include <linux/types.h>
+#include <linux/const.h>
 #include <linux/ioctl.h>
+#include <linux/types.h>
 
-#ifndef __user
-#define __user
-#endif
+#define GNA_DDI_VERSION_3 3
 
 /* Operation modes */
 #define GNA_MODE_GMM	0
@@ -23,16 +18,16 @@ extern "C" {
 #define GNA_PARAM_RECOVERY_TIMEOUT	2
 #define GNA_PARAM_DEVICE_TYPE		3
 #define GNA_PARAM_INPUT_BUFFER_S	4
+#define GNA_PARAM_DDI_VERSION		5
 
-#define GNA_STS_SCORE_COMPLETED		(1 << 0)
-#define GNA_STS_STATISTICS_VALID	(1 << 3)
-#define GNA_STS_PCI_MMU_ERR		(1 << 4)
-#define GNA_STS_PCI_DMA_ERR		(1 << 5)
-#define GNA_STS_PCI_UNEXCOMPL_ERR	(1 << 6)
-#define GNA_STS_VA_OOR			(1 << 7)
-#define GNA_STS_PARAM_OOR		(1 << 8)
-#define GNA_STS_OUTBUF_FULL		(1 << 16)
-#define GNA_STS_SATURATE		(1 << 17)
+#define GNA_STS_SCORE_COMPLETED		_BITUL(0)
+#define GNA_STS_STATISTICS_VALID	_BITUL(3)
+#define GNA_STS_PCI_MMU_ERR		_BITUL(4)
+#define GNA_STS_PCI_DMA_ERR		_BITUL(5)
+#define GNA_STS_PCI_UNEXCOMPL_ERR	_BITUL(6)
+#define GNA_STS_VA_OOR			_BITUL(7)
+#define GNA_STS_PARAM_OOR		_BITUL(8)
+#define GNA_STS_SATURATE		_BITUL(17)
 
 #define GNA_ERROR (GNA_STS_PCI_DMA_ERR | \
 			GNA_STS_PCI_MMU_ERR | \
@@ -43,6 +38,9 @@ extern "C" {
 #define GNA_DEV_TYPE_0_9	0x09
 #define GNA_DEV_TYPE_1_0	0x10
 #define GNA_DEV_TYPE_2_0	0x20
+#define GNA_DEV_TYPE_3_0	0x30
+
+#define GNA_FLAG_SCORE_QOS	_BITUL(0)
 
 /*
  * Structure describes part of memory to be overwritten before starting GNA
@@ -92,12 +90,16 @@ struct gna_compute_cfg {
 	__u8 active_list_on;
 	__u8 gna_mode;
 	__u8 hw_perf_encoding;
-	__u8 pad[5];
+	__u8 flags;
+
+	__u8 pad[4];
 };
+
+typedef __u64 gna_param_id;
 
 union gna_parameter {
 	struct {
-		__u64 id;
+		gna_param_id id;
 	} in;
 
 	struct {
@@ -147,9 +149,5 @@ union gna_wait {
 #define GNA_UNMAP_MEMORY	_IOWR('C', 0x03, __u64)
 #define GNA_COMPUTE		_IOWR('C', 0x04, union gna_compute)
 #define GNA_WAIT		_IOWR('C', 0x05, union gna_wait)
-
-#if defined(__cplusplus)
-}
-#endif
 
 #endif /* _UAPI_GNA_H_ */

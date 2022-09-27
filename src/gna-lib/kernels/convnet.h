@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -18,7 +18,6 @@
 #define ConvolutionPoolingKernelImpl1B KERNEL(ConvolutionPoolingKernelImpl1B)
 #define ConvolutionKernelImpl2B KERNEL(ConvolutionKernelImpl2B)
 #define ConvolutionPoolingKernelImpl2B KERNEL(ConvolutionPoolingKernelImpl2B)
-#define Pooling2DKernelImpl2B KERNEL(Pooling2DKernelImpl2B)
 #define MaxPartialPoolingFunction KERNEL(MaxPartialPoolingFunction)
 #define SumPartialPoolingFunction KERNEL(SumPartialPoolingFunction)
 
@@ -33,14 +32,12 @@
 
 using GNA::PwlCached;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/** CNN maximum size of pooling window */
+const uint32_t CNN_POOL_SIZE_MAX = 6;
 
-    void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig);
-
-    void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
-        PoolingConfig const * const poolConfig, PwlCached const * const pwl);
+void ConvolutionKernelImpl(ConvolutionConfig const * const filterConfig);
+void ConvolutionPoolingKernelImpl(ConvolutionConfig const * const filterConfig,
+    PoolingConfig const * const poolConfig, PwlCached const * const pwl);
 
 #if OPT_LEVEL < 2
     void ConvolutionKernelImpl1B(ConvolutionConfig const * const filterConfig);
@@ -57,6 +54,16 @@ extern "C" {
     void Pooling2DKernelImpl2B(ExecutionKernelConfig<PoolingConfig2D> const * const config);
     void Pooling2DKernelImpl4B(ExecutionKernelConfig<PoolingConfig2D> const * const config);
 #endif
+#if OPT_LEVEL == 3 || OPT_LEVEL == 7
+    void Pooling2DKernelImpl1B(ExecutionKernelConfig<PoolingConfig2D> const * const config);
+    void Pooling2DKernelImpl2B(ExecutionKernelConfig<PoolingConfig2D> const * const config);
+    void Pooling2DKernelImpl4B(ExecutionKernelConfig<PoolingConfig2D> const * const config);
+    void Convolution2DKernelImpl1B1B(ExecutionKernelConfig<ConvolutionConfig2D> const * const config);
+    void Convolution2DKernelImpl1B2B(ExecutionKernelConfig<ConvolutionConfig2D> const * const config);
+    void Convolution2DKernelImpl2B1B(ExecutionKernelConfig<ConvolutionConfig2D> const * const config);
+    void Convolution2DKernelImpl2B2B(ExecutionKernelConfig<ConvolutionConfig2D> const * const config);
+#endif
+
 /* Calculates MaxPartialPoolingFunction
 * @PS   number of pool size
 * @PNE  number of pool entries
@@ -75,10 +82,6 @@ void MaxPartialPoolingFunction(const uint32_t PS, const uint32_t PNE, const uint
 * @V    pointer to value
 */
 void SumPartialPoolingFunction(const uint32_t PS, const uint32_t PNE, const uint32_t PSI, const int64_t* P, int64_t* V);
-
-#ifdef __cplusplus
-}
-#endif
 
 template<class T = int32_t>
 __forceinline void gna_saturate_cast(int64_t & val, uint32_t & saturationCount)

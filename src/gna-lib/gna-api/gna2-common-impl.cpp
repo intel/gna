@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ApiWrapper.h"
 
@@ -14,7 +14,7 @@
 
 
 #if !defined(_WIN32)
-#include <assert.h>
+#include <cassert>
 #endif
 
 /**
@@ -30,6 +30,8 @@ static_assert(1 == sizeof(uint8_t), "Invalid size of uint8_t");
 static_assert(2 == sizeof(uint16_t), "Invalid size of uint16_t");
 static_assert(4 == sizeof(uint32_t), "Invalid size of uint32_t");
 
+const std::map<Gna2Status, std::string>& staticDestructionProtectionHelper = GNA::StatusHelper::GetStringMap();
+
 const std::map<Gna2Status, std::string>& GNA::StatusHelper::GetStringMap()
 {
     static const std::map<Gna2Status, std::string> Gna2StatusToStringMap
@@ -37,6 +39,7 @@ const std::map<Gna2Status, std::string>& GNA::StatusHelper::GetStringMap()
         { Gna2StatusSuccess, "Gna2StatusSuccess" },
         { Gna2StatusWarningDeviceBusy, "Gna2StatusWarningDeviceBusy" },
         { Gna2StatusWarningArithmeticSaturation, "Gna2StatusWarningArithmeticSaturation" },
+        { Gna2StatusModelErrorUnavailable, "Gna2StatusModelErrorUnavailable" },
         { Gna2StatusUnknownError, "Gna2StatusUnknownError" },
         { Gna2StatusNotImplemented, "Gna2StatusNotImplemented" },
         { Gna2StatusIdentifierInvalid, "Gna2StatusIdentifierInvalid" },
@@ -153,16 +156,3 @@ GNA2_API uint32_t Gna2StatusGetMaxMessageLength()
     return GNA::StringHelper::GetMaxLength(GNA::StatusHelper::GetStringMap());
 }
 
-Gna2DeviceVersion GNA::Gna2GetVersionForLegacy(gna_device_version legacyVersion)
-{
-    static const std::unordered_map<gna_device_version, Gna2DeviceVersion, GNA::EnumHash> DeviceVersionMapInverted =
-    {
-        {GNA_GMM, Gna2DeviceVersionGMM },
-        {GNA_0x9, Gna2DeviceVersion0_9 },
-        {GNA_1x0, Gna2DeviceVersion1_0 },
-        {GNA_2x0, Gna2DeviceVersion2_0 },
-        {GNA_EMBEDDED_1x0, Gna2DeviceVersionEmbedded1_0 },
-        {GNA_SOFTWARE_EMULATION, Gna2DeviceVersionSoftwareEmulation }
-    };
-    return DeviceVersionMapInverted.at(legacyVersion);
-}

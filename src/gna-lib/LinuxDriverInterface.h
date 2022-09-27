@@ -1,13 +1,14 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
-#include "DriverInterface.h"
+#ifndef WIN32
 
-#include "common.h"
+#include "DriverInterface.h"
+#include "gna-h-wrapper.h"
 
 #include <cstdint>
 
@@ -32,21 +33,25 @@ public:
     virtual void MemoryUnmap(uint64_t memoryId) override;
 
     virtual RequestResult Submit(HardwareRequest& hardwareRequest,
-                                RequestProfiler * const profiler) const override;
+                                RequestProfiler & profiler) const override;
 
     LinuxDriverInterface(const LinuxDriverInterface &) = delete;
     LinuxDriverInterface& operator=(const LinuxDriverInterface&) = delete;
 
 private:
-    static void convertDriverPerfResult(Gna2InstrumentationUnit targetUnit, DriverPerfResults & driverPerf);
+    using ParamsMap = std::map<gna_param_id, std::pair<union gna_parameter, bool /*ZERO_ON_EINVAL*/>>;
+
+    static void convertPerfResultUnit(DriverPerfResults & driverPerf,
+        const Gna2InstrumentationUnit targetUnit);
 
     void createRequestDescriptor(HardwareRequest& hardwareRequest) const override;
 
     Gna2Status parseHwStatus(uint32_t hwStatus) const override;
 
-    int discoverDevice(uint32_t deviceIndex, gna_parameter *params, size_t paramsNum);
+    int discoverDevice(uint32_t deviceIndex, ParamsMap &out);
 
     int gnaFileDescriptor = -1;
 };
 
 }
+#endif // !WIN32

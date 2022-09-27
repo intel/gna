@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "igemv16.h"
 
@@ -29,7 +29,7 @@ static void transposeN6(int16_t *input, int16_t *output, uint32_t M);
 static void transposeN7(int16_t *input, int16_t *output, uint32_t M);
 static void transposeN8(int16_t *input, int16_t *output, uint32_t M);
 
-void TransposeKernelImpl(TransposeConfig const * const transposeConfig)
+void TransposeKernelImpl2B(TransposeConfig const * const transposeConfig)
 {
     uint32_t M = transposeConfig->rowCount;
     uint32_t N = transposeConfig->columnCount;
@@ -1242,6 +1242,7 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
     __m128i abcdefgh1, abcdefgh2, abcdefgh3, abcdefgh4;
     __m128i abcdefgh5, abcdefgh6, abcdefgh7, abcdefgh8;
 
+    int16_t *in0 = input;
     int16_t *in1;
     int16_t *in2;
     int16_t *in3;
@@ -1260,9 +1261,9 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
     int16_t *out6;
     int16_t *out7;
 
-    for (; input < input_end;)
+    for (; in0 < input_end;)
     {
-        in1 = input + N;
+        in1 = in0 + N;
         in2 = in1 + N;
         in3 = in2 + N;
         in4 = in3 + N;
@@ -1270,7 +1271,7 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
         in6 = in5 + N;
         in7 = in6 + N;
 
-        a = _mm_lddqu_si128((__m128i*)input);
+        a = _mm_lddqu_si128((__m128i*)in0);
         b = _mm_lddqu_si128((__m128i*)in1);
         c = _mm_lddqu_si128((__m128i*)in2);
         d = _mm_lddqu_si128((__m128i*)in3);
@@ -1287,10 +1288,10 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
         out6 = out5 + M;
         out7 = out6 + M;
 
-        int16_t *col_end = input + N_VEC;
-        for (; input < col_end;)
+        int16_t *col_end = in0 + N_VEC;
+        for (; in0 < col_end;)
         {
-            input += SSE_16CAP;
+            in0 += SSE_16CAP;
             in1 += SSE_16CAP;
             in2 += SSE_16CAP;
             in3 += SSE_16CAP;
@@ -1346,7 +1347,7 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
             out6 += M * 8;
             out7 += M * 8;
 
-            a = _mm_lddqu_si128((__m128i*)input);
+            a = _mm_lddqu_si128((__m128i*)in0);
             b = _mm_lddqu_si128((__m128i*)in1);
             c = _mm_lddqu_si128((__m128i*)in2);
             d = _mm_lddqu_si128((__m128i*)in3);
@@ -1356,17 +1357,8 @@ void transposeN8(int16_t *input, int16_t *output, uint32_t M)
             h = _mm_lddqu_si128((__m128i*)in7);
         }
 
-        input = input - N_VEC + SSE_16CAP * N;
+        in0 = in0 - N_VEC + SSE_16CAP * N;
         out0 = out0 - N_VEC * M + SSE_16CAP;
-    }
-
-    for (uint32_t i = M_VEC; i < M; i++)
-    {
-        for (uint32_t j = 0; j < N_VEC; j++)
-        {
-            output[j * M + i] = input[i * N + j];
-        }
-
     }
 
     for (uint32_t i = N_VEC; i < N; i++)

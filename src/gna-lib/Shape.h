@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -11,7 +11,6 @@
 
 #include "gna2-model-impl.h"
 
-#include "gna-api-types-xnn.h"
 
 #include <cstdint>
 #include <map>
@@ -37,20 +36,15 @@ struct Shape : public ShapeMap
         Shape{ Create(std::vector<uint32_t>({ std::forward<T>(static_cast<uint32_t>(dimensions))... }), order), order }
     { }
 
-    explicit Shape(gna_3d_dimensions shape);
-
-    Shape & operator=(const Shape & right);
     Shape(const Shape&) = default;
+    Shape& operator=(const Shape&) = default;
     ~Shape() = default;
-
-    ModelValue AsModelValue(char dimension) const;
+    ModelValue AsModelValue(char dimension, uint32_t operandIndex = Gna2DisabledU32) const;
 
     using ShapeMap::at;
     using ShapeMap::operator[];
     uint32_t& operator[](char dimension);
     uint32_t at(char dimension) const;
-
-    operator gna_3d_dimensions const() const;
 
     operator ApiShape() const;
 
@@ -67,6 +61,10 @@ struct Shape : public ShapeMap
     void ExpectEqual(const Shape& reference) const;
 
     void ExpectEqualInverted(const ApiShape & source) const;
+
+    void ExpectSquare() const;
+
+    bool IsSquare() const;
 
 protected:
     static ShapeMap Create(const std::vector<uint32_t> && dimensions,

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gna2-memory-api.h"
 
@@ -36,6 +36,18 @@ GNA2_API enum Gna2Status Gna2MemoryFree(
     const std::function<ApiStatus()> command = [&]()
     {
         DeviceManager::Get().FreeMemory(memory);
+        return Gna2StatusSuccess;
+    };
+    return ApiWrapper::ExecuteSafely(command);
+}
+
+GNA2_API enum Gna2Status Gna2MemorySetTag(
+    void * memory,
+    uint32_t tag)
+{
+    const std::function<ApiStatus()> command = [&]()
+    {
+        DeviceManager::Get().TagMemory(memory, tag);
         return Gna2StatusSuccess;
     };
     return ApiWrapper::ExecuteSafely(command);

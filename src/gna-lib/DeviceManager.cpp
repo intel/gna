@@ -1,25 +1,24 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
+
+#define NOMINMAX 1
 
 #include "DeviceManager.h"
 
 #include "Expect.h"
 #include "GnaException.h"
 #include "Logger.h"
-#if defined(_WIN32)
-#include "WindowsDriverInterface.h"
-#else // linux
-#include "LinuxDriverInterface.h"
-#endif
+#include "HybridDevice.h"
 
-#include "common.h"
 #include "gna2-common-api.h"
 
 #include <memory>
 
 using namespace GNA;
+
+auto const & staticDestructionProtectionHelper1 = GNA::StatusHelper::GetStringMap();
 
 constexpr uint32_t DeviceManager::DefaultThreadCount;
 
@@ -27,25 +26,10 @@ DeviceManager::DeviceManager()
 {
     for (uint8_t i = 0; i < DriverInterface::MAX_GNA_DEVICES; i++)
     {
-        std::unique_ptr<DriverInterface> driverInterface =
+        auto const deviceVersion = DriverInterface::Query(i);
+        if (deviceVersion != Gna2DeviceVersionSoftwareEmulation || i == 0)
         {
-    #if defined(_WIN32)
-            std::make_unique<WindowsDriverInterface>()
-    #else // GNU/Linux / Android / ChromeOS
-            std::make_unique<LinuxDriverInterface>()
-    #endif
-        };
-        const auto success = driverInterface->OpenDevice(i);
-        if (success ||
-            i == 0)
-        {
-            auto caps = HardwareCapabilities{};
-            caps.DiscoverHardware(driverInterface->GetCapabilities());
-            if (caps.IsHardwareSupported() ||
-                i == 0)
-            {
-                capabilities.emplace(i, caps);
-            }
+            capabilities.emplace(i, deviceVersion);
         }
     }
 }
@@ -56,14 +40,31 @@ Device& DeviceManager::GetDevice(uint32_t deviceIndex)
     return device;
 }
 
-void DeviceManager::CreateDevice(uint32_t deviceIndex)
+ExportDevice& DeviceManager::GetDeviceForExport(uint32_t deviceIndex)
 {
-    if (!IsOpened(deviceIndex))
+    if (deviceIndex < GetDeviceCount())
     {
-        auto const emplaced = devices.emplace(deviceIndex, DeviceContext{
-           std::make_unique<Device>(deviceIndex, DeviceManager::DefaultThreadCount), 0});
-        MapAllToDevice(*emplaced.first->second);
+        throw GnaException(Gna2StatusIdentifierInvalid);
     }
+    return static_cast<ExportDevice&>(*GetDeviceContext(deviceIndex));
+}
+
+void DeviceManager::CreateExportDevice(uint32_t * deviceIndex, Gna2DeviceVersion targetDeviceVersion)
+{
+    Expect::NotNull(deviceIndex);
+    Expect::True(targetDeviceVersion != Gna2DeviceVersionSoftwareEmulation, Gna2StatusDeviceVersionInvalid);
+
+    auto const index = GetDeviceCount() + exportDevicesCount;
+    Expect::InRange(index, DeviceCreateExportMaxInstances, Gna2StatusIdentifierInvalid);
+
+    auto device = std::make_unique<ExportDevice>(targetDeviceVersion);
+    *deviceIndex = index;
+    auto const emplaced = devices.emplace(*deviceIndex,
+        DeviceContext{ std::move(device), 0 });
+    Expect::True(emplaced.second, Gna2StatusIdentifierInvalid);
+    exportDevicesCount++;
+    Log->Message("Export Device %u created, target version %d\n",
+        deviceIndex, targetDeviceVersion);
 }
 
 bool DeviceManager::IsOpened(uint32_t deviceIndex)
@@ -86,8 +87,28 @@ DeviceManager::DeviceContext& DeviceManager::GetDeviceContext(uint32_t deviceInd
 
 DeviceManager::DeviceContext::DeviceContext(std::unique_ptr<Device> handle, uint32_t referenceCount) :
     std::unique_ptr<Device>{ std::move(handle) },
-    ReferenceCount{referenceCount}
+    ReferenceCount{ referenceCount }
 {
+}
+
+uint32_t DeviceManager::DeviceContext::operator++()
+{
+    if (MaximumReferenceCount == ReferenceCount)
+    {
+        throw GnaException(Gna2StatusDeviceNotAvailable);
+    }
+    ReferenceCount++;
+    return ReferenceCount;
+}
+
+uint32_t DeviceManager::DeviceContext::operator--()
+{
+    if (ReferenceCount > 0)
+    {
+        --ReferenceCount;
+        return ReferenceCount;
+    }
+    throw GnaException(Gna2StatusIdentifierInvalid);
 }
 
 uint32_t DeviceManager::GetDeviceCount() const
@@ -102,16 +123,13 @@ DeviceVersion DeviceManager::GetDeviceVersion(uint32_t deviceIndex)
         const auto& device = GetDevice(deviceIndex);
         return device.GetVersion();
     }
-    else
+    try // fetch not yet opened device version
     {
-        try // fetch not yet opened device version
-        {
-            return capabilities.at(deviceIndex).GetHardwareDeviceVersion();
-        }
-        catch (std::out_of_range&)
-        {
-            throw GnaException(Gna2StatusIdentifierInvalid);
-        }
+        return capabilities.at(deviceIndex);
+    }
+    catch (std::out_of_range&)
+    {
+        throw GnaException(Gna2StatusIdentifierInvalid);
     }
 }
 
@@ -131,37 +149,38 @@ void DeviceManager::OpenDevice(uint32_t deviceIndex)
 {
     Expect::InRange(deviceIndex, GetDeviceCount() - 1, Gna2StatusIdentifierInvalid);
 
-    CreateDevice(deviceIndex);
-
-    auto & deviceRefCount = GetDeviceContext(deviceIndex).ReferenceCount;
-    if (MaximumReferenceCount == deviceRefCount)
+    if (!IsOpened(deviceIndex))
     {
-        throw GnaException(Gna2StatusDeviceNotAvailable);
+        auto device = HybridDevice::Create(deviceIndex);
+        auto const emplaced = devices.emplace(deviceIndex,
+            DeviceContext{ std::move(device), 0, });
+        MapAllToDevice(*emplaced.first->second);
     }
-    deviceRefCount++;
+
+    const auto deviceRefCount = ++GetDeviceContext(deviceIndex);
     Log->Message("Device %u opened, active handles: %u\n",
         deviceIndex, deviceRefCount);
 }
 
 void DeviceManager::CloseDevice(uint32_t deviceIndex)
 {
-    auto & deviceRefCount = GetDeviceContext(deviceIndex).ReferenceCount;
-    if (deviceRefCount > 0)
-
+    if (deviceIndex >= GetDeviceCount())
     {
-        --deviceRefCount;
+        Expect::GtZero(devices.erase(deviceIndex), Gna2StatusIdentifierInvalid);
+        exportDevicesCount--;
+    }
+    else
+    {
+        const auto deviceRefCount = --GetDeviceContext(deviceIndex);
+
         Log->Message("Device %u closed, active handles: %u\n",
             deviceIndex, deviceRefCount);
 
         if (deviceRefCount == 0)
         {
-            UnMapAllFromDevice(GetDevice(deviceIndex));
+            UnMapAllMemoryObjectsFromDevice(GetDevice(deviceIndex));
             devices.erase(deviceIndex);
         }
-    }
-    else
-    {
-        throw GnaException(Gna2StatusIdentifierInvalid);
     }
 }
 
@@ -174,12 +193,12 @@ Device & DeviceManager::GetDeviceForModel(uint32_t modelId)
 
 Device* DeviceManager::TryGetDeviceForModel(uint32_t modelId)
 {
-    for(const auto& device : devices)
+    for (const auto& device : devices)
     {
-       if(device.second->HasModel(modelId))
-       {
-           return device.second.get();
-       }
+        if (device.second->HasModel(modelId))
+        {
+            return device.second.get();
+        }
     }
     return nullptr;
 }
@@ -191,18 +210,17 @@ void DeviceManager::AllocateMemory(uint32_t requestedSize,
     Expect::NotNull(memoryAddress);
 
     *sizeGranted = 0;
-    auto memoryObject = createMemoryObject(requestedSize);
+    auto const memoryObject = CreateInternalMemory(requestedSize);
 
     MapMemoryToAll(*memoryObject);
 
     *memoryAddress = memoryObject->GetBuffer();
-    *sizeGranted = (uint32_t)memoryObject->GetSize();
-    memoryObjects.emplace_back(std::move(memoryObject));
+    *sizeGranted = static_cast<uint32_t>(memoryObject->GetSize());
 }
 
-std::pair<bool, std::vector<std::unique_ptr<Memory>>::const_iterator> DeviceManager::HasMemory(void * buffer) const
+std::pair<bool, std::vector<std::unique_ptr<Memory>>::iterator> DeviceManager::FindMemory(void * buffer)
 {
-    auto memoryIterator = std::find_if(memoryObjects.cbegin(), memoryObjects.cend(),
+    auto memoryIterator = std::find_if(memoryObjects.begin(), memoryObjects.end(),
         [buffer](const std::unique_ptr<Memory>& memory)
     {
         return memory->GetBuffer() == buffer;
@@ -215,13 +233,14 @@ void DeviceManager::FreeMemory(void *buffer)
 {
     Expect::NotNull(buffer);
 
-    auto found = HasMemory(buffer);
+    const auto found = FindMemory(buffer);
 
     if (!found.first)
     {
         throw GnaException(Gna2StatusIdentifierInvalid);
     }
 
+    UnmapMemoryFromAllDevices(*(*found.second));
     memoryObjects.erase(found.second);
 }
 
@@ -233,7 +252,7 @@ void DeviceManager::MapMemoryToAll(Memory& memoryObject)
     }
 }
 
-void DeviceManager::UnMapMemoryFromAll(Memory& memoryObject)
+void DeviceManager::UnmapMemoryFromAllDevices(Memory& memoryObject)
 {
     for (const auto& device : devices)
     {
@@ -277,7 +296,22 @@ const std::vector<std::unique_ptr<Memory>> & DeviceManager::GetAllAllocated() co
     return memoryObjects;
 }
 
-void DeviceManager::UnMapAllFromDevice(Device& device)
+void DeviceManager::TagMemory(void* memory, uint32_t tag)
+{
+    const auto found = FindMemory(memory);
+    Expect::True(found.first, Gna2StatusMemoryBufferInvalid);
+    found.second->get()->SetTag(tag);
+}
+
+void DeviceManager::AssignProfilerConfigToRequestConfig(uint32_t instrumentationConfigId,
+    uint32_t requestConfigId)
+{
+    auto& profilerConfig = ProfilerConfigManager.GetConfiguration(instrumentationConfigId);
+    auto& deviceToAssign = GetDeviceForRequestConfigId(requestConfigId);
+    deviceToAssign.AssignProfilerConfigToRequestConfig(requestConfigId, profilerConfig);
+}
+
+void DeviceManager::UnMapAllMemoryObjectsFromDevice(Device& device)
 {
     for (auto& m : memoryObjects)
     {
@@ -291,9 +325,4 @@ void DeviceManager::MapAllToDevice(Device& device)
     {
         device.MapMemory(*m);
     }
-}
-
-std::unique_ptr<Memory> DeviceManager::createMemoryObject(uint32_t requestedSize)
-{
-    return std::make_unique<Memory>(requestedSize);
 }

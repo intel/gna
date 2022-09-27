@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -19,7 +19,7 @@ namespace GNA
 {
     class LayerDescriptor;
 
-    class HardwareModelSue1 : public HardwareModel
+    class HardwareModelSue1 : protected HardwareModel
     {
     public:
 
@@ -33,9 +33,9 @@ namespace GNA
 
         uint32_t GetInputOffset(uint32_t layerIndex) const;
 
-        // this override does not add PAGE_SIZE alignment to calculations
+        // this override does not add MemoryBufferAlignment alignment to calculations
         // since memory buffers are copied to one allocated memory buffer
-        virtual uint32_t GetBufferOffset(const BaseAddress& address) const override;
+        virtual LdaOffset GetBufferOffset(const BaseAddress& address) const override;
 
         void * Export();
 
@@ -45,16 +45,13 @@ namespace GNA
         virtual void prepareAllocationsAndModel() override;
 
     private:
-        static HardwareCapabilities sueCapabilities;
+        static const HardwareCapabilities& GetHwCaps();
 
         Gna2UserAllocator customAlloc = nullptr;
 
         void * exportMemory = nullptr;
 
         uint32_t totalModelSize = 0;
-
-        std::unique_ptr<Memory> scratchPadMemory;
-
     };
 
 }

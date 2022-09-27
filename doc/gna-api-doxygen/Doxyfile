@@ -1,6 +1,6 @@
 # Doxyfile 1.8.17
 
-# @copyright (C) 2020-2021 Intel Corporation
+# Copyright (C) 2019-2022 Intel Corporation
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 # This file describes the settings to be used by the documentation system
@@ -35,13 +35,13 @@ DOXYFILE_ENCODING      = UTF-8
 # title of most generated pages and in a few other places.
 # The default value is: My Project.
 
-PROJECT_NAME           = "Gaussian and Neural Accelerator 2.0 Library"
+PROJECT_NAME           = "Gaussian and Neural Accelerator 3.0 Library"
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
 # quick idea about the purpose of the project. Keep the description short.
 
-PROJECT_BRIEF          = "GNA 2.0 Library"
+PROJECT_BRIEF          = "GNA 3.0 Library"
 
 # With the PROJECT_LOGO tag one can specify a logo or an icon that is included
 # in the documentation. The maximum height of the logo should not exceed 55
@@ -2576,4 +2576,4 @@ DOT_CLEANUP            = YES
 # control system is used.
 
 
-PROJECT_NUMBER=2.0
+PROJECT_NUMBER=3.0

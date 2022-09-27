@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-model-suecreek-header.h
@@ -24,9 +24,9 @@
 #define __GNA2_MODEL_SUECREEK_HEADER_H
 
 #if !defined(_WIN32)
-#include <assert.h>
+#include <cassert>
 #endif
-#include <stdint.h>
+#include <cstdint>
 
 /**
  Header describing parameters of dumped model.

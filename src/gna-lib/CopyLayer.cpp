@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "CopyLayer.h"
 
@@ -9,6 +9,7 @@
 #include "Address.h"
 #include "Capabilities.h"
 #include "Expect.h"
+#include "LayerCapabilities.h"
 #include "LayerConfiguration.h"
 #include "LayerInput.h"
 #include "LayerOutput.h"
@@ -18,8 +19,6 @@
 #include "gna2-common-api.h"
 #include "gna2-model-api.h"
 
-#include "gna-api-types-xnn.h"
-#include "gna-api.h"
 
 #include <algorithm>
 #include <memory>
@@ -32,63 +31,43 @@ class BaseValidator;
 using namespace GNA;
 
 static const std::pair<gna_tensor_dim, RangeLimits<uint32_t>> copyShapeWlimit =
-{GNA_DIM_W, {XNN_N_IN_ELEMS_MPLY, XNN_N_IN_ELEMS_MAX, XNN_N_IN_ELEMS_MPLY, Gna2StatusXnnErrorLyrCfg}};
+{ GNA_DIM_W, RangeLimits<uint32_t>{LayerCapabilities::LegacyInputs, Gna2StatusXnnErrorLyrCfg } };
 
 const FullCapabilitiesMap CopyLayer::limits
 {
     { INTEL_COPY, {
-        { GNA_0_9, std::make_shared<ComponentLimits>(ComponentLimits(
+        { Gna2DeviceGeneration0_9, std::make_shared<ComponentLimits>(ComponentLimits(
             {GNA_TENSOR_HW},
-            {{GNA_DIM_H, {1, XNN_N_GROUP_MAX, 1, Gna2StatusXnnErrorLyrCfg}},
-            copyShapeWlimit}))},
-        { GNA_3_0, std::make_shared<ComponentLimits>(ComponentLimits(
-            {GNA_TENSOR_HW},
-            {{GNA_DIM_H, {1, COPY_N_GROUP_MAX, 1, Gna2StatusXnnErrorLyrCfg}},
+            {{GNA_DIM_H, {1, BatchSizeMax, 1, Gna2StatusXnnErrorLyrCfg}},
             copyShapeWlimit}))},
     }},
 };
 
-CopyLayer::CopyLayer(const nn_layer& layer, const BaseValidator& validatorIn) :
-    Layer(layer, validatorIn, {}, BaseAddress()),
-    ColumnCount{ static_cast<const nn_layer_copy*>(layer.pLayerStruct)->nCopyCols },
-    RowCount{ static_cast<const nn_layer_copy*>(layer.pLayerStruct)->nCopyRows },
-    copyKernels{ AccelerationDetector::GetKernelMap<CopyKernel>(KERNEL_COPY, KernelMode {Input.Mode}) },
-    copyHiddenConfig{ RowCount, ColumnCount, Input.Dimensions.at('W'), Output.Dimensions.at('W'), Input.Buffer, Output.Buffer }
-{
-    auto copyParams = std::make_unique<const Component>(Shape{GNA_TENSOR_HW, RowCount, ColumnCount},
-        Validator{ *validator, limits });
-    Expect::True(RowCount <= Input.Dimensions.at('H'), Gna2StatusXnnErrorLyrCfg);
-
-    ComputeHidden = [this](AccelerationMode accel, ExecutionConfig const & executionConfig)
-                    {this->computeHidden(accel, executionConfig); };
-
-    Compute = [this](LayerConfiguration &layerConfiguration, AccelerationMode accel, ExecutionConfig const & executionConfig)
-                    {this->compute(layerConfiguration, accel, executionConfig); };
-}
-
-CopyLayer::CopyLayer(const Gna2Operation& operation, const BaseValidator& validatorIn) :
+CopyLayer::CopyLayer(const Gna2Operation& operation, const LayerValidator& validatorIn) :
     Layer(operation, validatorIn, {}, BaseAddress()),
     ColumnCount{ GetCopyShape(operation).at('W') },
     RowCount{ GetCopyShape(operation).at('H') },
     copyKernels{ AccelerationDetector::GetKernelMap<CopyKernel>(KERNEL_COPY, KernelMode {Input.Mode}) },
     copyHiddenConfig{ RowCount, ColumnCount, Input.Dimensions.at('W'), Output.Dimensions.at('W'), Input.Buffer, Output.Buffer }
 {
+
     try
     {
-        auto copyParams = std::make_unique<const Component>(Shape{ GNA_TENSOR_HW, RowCount, ColumnCount },
-            Validator{ *validator, limits });
+        auto const copyParams = std::make_unique<const Component>(Shape{ GNA_TENSOR_HW, RowCount, ColumnCount },
+            Validator{ *validator, limits }, false, CopyShapeParamIndex);
+        copyParams->ValidateDimensions(Input.Mode.Type);
         ModelErrorHelper::ExpectBelowEq(RowCount, Input.Dimensions.at('H'), Gna2ItemTypeShapeDimensions);
     }
-    catch(GnaModelErrorException& e)
+    catch(GnaModelErrorException&)
     {
-        e.SetParameterIndex(0);
-        throw;
+        GnaModelErrorException::DispatchAndFill(Gna2DisabledU32, 0);
     }
     ComputeHidden = [this](AccelerationMode accel, ExecutionConfig const & executionConfig)
     {this->computeHidden(accel, executionConfig); };
 
     Compute = [this](LayerConfiguration &layerConfiguration, AccelerationMode accel, ExecutionConfig const & executionConfig)
     {this->compute(layerConfiguration, accel, executionConfig); };
+    dataConfig = { Input.Mode, DataMode{}, DataMode{}, Output.Mode };
 }
 
 void CopyLayer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) const
@@ -97,14 +76,12 @@ void CopyLayer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) cons
     if (layerConfiguration.Buffers.count(InputOperandIndex) > 0)
     {
         inputBuffer = layerConfiguration.Buffers[InputOperandIndex];
-        Input.ValidateBuffer(inputBuffer);
     }
 
     BaseAddress outputBuffer = Output;
     if (layerConfiguration.Buffers.count(OutputOperandIndex) > 0)
     {
         outputBuffer = layerConfiguration.Buffers[OutputOperandIndex];
-        Output.ValidateBuffer(outputBuffer);
     }
 
     auto& configs = layerConfiguration.Configs;
@@ -115,11 +92,6 @@ void CopyLayer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) cons
 
     configs.Copy->input = inputBuffer;
     configs.Copy->output = outputBuffer;
-}
-
-DataConfig CopyLayer::GetDataMode() const
-{
-    return DataConfig(Input.Mode, GNA_DATA_DISABLED, GNA_DATA_DISABLED, Output.Mode);
 }
 
 void CopyLayer::computeHidden(AccelerationMode accel, ExecutionConfig const & executionConfig) const

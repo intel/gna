@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -15,7 +15,7 @@
 #include <map>
 #include <memory>
 #define WIN32_NO_STATUS
-#include <Windows.h>
+#include <windows.h>
 #undef WIN32_NO_STATUS
 
 namespace GNA
@@ -83,7 +83,8 @@ class WindowsDriverInterface : public DriverInterface
     static const uint64_t FORBIDDEN_MEMORY_ID;
 public:
     WindowsDriverInterface();
-    virtual ~WindowsDriverInterface() override = default;
+
+    virtual ~WindowsDriverInterface();
 
     virtual bool OpenDevice(uint32_t deviceIndex) override;
 
@@ -92,12 +93,23 @@ public:
     virtual void MemoryUnmap(uint64_t memoryId) override;
 
     virtual RequestResult Submit(
-        HardwareRequest& hardwareRequest, RequestProfiler * const profiler) const override;
+        HardwareRequest& hardwareRequest, RequestProfiler& profiler) const override;
 
 protected:
     void createRequestDescriptor(HardwareRequest& hardwareRequest) const;
 
     Gna2Status parseHwStatus(uint32_t hwStatus) const override;
+
+    void QoSRequest(size_t size, OverlappedWithEvent & ioHandle, void * input) const;
+
+    template<Gna2Status status = Gna2StatusDeviceOutgoingCommunicationError>
+    void InferenceRequest(size_t size, OverlappedWithEvent & ioHandle, void * input, char const message[] = nullptr) const
+    {
+        auto const ioResult = WriteFile(deviceHandle,
+            input, static_cast<DWORD>(size),
+            nullptr, ioHandle);
+        checkStatus<status>(ioResult, message);
+    }
 
 private:
     WindowsDriverInterface(const WindowsDriverInterface &) = delete;
@@ -109,7 +121,16 @@ private:
 
     void verify(LPOVERLAPPED ioctl) const;
 
-    void checkStatus(BOOL ioResult) const;
+    template<Gna2Status status = Gna2StatusDeviceOutgoingCommunicationError>
+    void checkStatus(BOOL ioResult, char const message[] = nullptr) const
+    {
+        throwOnFailedPredicate(
+            [](BOOL ioResult, DWORD error)
+        {return (ioResult == 0 && ERROR_IO_PENDING != error); },
+            0,
+            status,
+            message);
+    }
 
     template <typename Predicate>
     void getOverlappedResult(Predicate predicate,
@@ -154,19 +175,21 @@ private:
 
     void getDeviceCapabilities();
 
+    void getDeviceCapabilityRequest(UINT64 param, UINT64 & value, bool newDDI);
+
     static uint64_t getPerfCounterFrequency();
 
     static std::string discoverDevice(uint32_t deviceIndex);
 
     static const std::map<GnaIoctlCommand, DWORD> ioctlCommandsMap;
 
-    std::map<uint64_t, std::unique_ptr<OverlappedWithEvent>> memoryMapRequests;
-
     WinHandle deviceHandle;
     WinHandle deviceEvent;
     OVERLAPPED overlapped;
 
     UINT32 recoveryTimeout;
+
+    std::map<uint64_t, std::unique_ptr<OverlappedWithEvent>> memoryMapRequests;
 };
 
 }

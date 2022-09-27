@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -35,9 +35,9 @@ struct FiltersTensor : public WeightTensor
 
 struct ConvolutionFunction
 {
-    template<class T>
+
     static std::unique_ptr<const ConvolutionFunction> Create(const Tensor * input, const Tensor * output,
-        const T& operationDetails, const LayerValidator & validatorIn)
+        const Gna2Operation& operationDetails, const LayerValidator & validatorIn)
     {
         expectValid(operationDetails);
         auto filters = createFilters(operationDetails, validatorIn);
@@ -88,21 +88,14 @@ private:
 
     static std::unique_ptr<const FiltersTensor> createFilters(const Gna2Operation & apiOperation,
         const LayerValidator & validatorIn);
-    static std::unique_ptr<const FiltersTensor> createFilters(const nn_layer_conv & cnn,
-        const LayerValidator & validatorIn);
 
     static std::unique_ptr<const Component> createStride(const Gna2Operation & cnn,
-        const LayerValidator & validatorIn);
-    static std::unique_ptr<const Component> createStride(const nn_layer_conv & cnn,
         const LayerValidator & validatorIn);
 
     static std::unique_ptr<const BiasTensor> createBiases(const Gna2Operation & apiOperation,
         const LayerValidator & validatorIn);
-    static std::unique_ptr<const BiasTensor> createBiases(const nn_layer_conv& cnn,
-        const LayerValidator& validatorIn);
 
     static void expectValid(const Gna2Operation & apiOperation);
-    static void expectValid(const nn_layer_conv & cnn);
 };
 
 }

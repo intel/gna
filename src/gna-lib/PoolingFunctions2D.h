@@ -1,14 +1,13 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "Capabilities.h"
 #include "Component.h"
 #include "OperationConfig.h"
-#include "PoolingMode.h"
 #include "Transform.h"
 #include "XnnKernel.h"
 
@@ -27,15 +26,10 @@ public:
         const OperationConfig& operation);
 
     PoolingFunction2D(const BaseTransformConfig<PoolingKernel2D>& config,
-        PoolingMode mode, std::unique_ptr<const Component> window,
+        KernelPoolingMode mode, std::unique_ptr<const Component> window,
         std::unique_ptr<const Component> stride);
 
     ~PoolingFunction2D() = default;
-
-    virtual bool Is1D() const override
-    {
-        return is1D;
-    }
 
     const KernelPoolingMode Mode;
 
@@ -44,8 +38,6 @@ public:
     std::unique_ptr<const Component> Stride;
 
 protected:
-    static const SetLimits<KernelPoolingMode> modeLimits;
-
     static std::unique_ptr<PoolingFunction2D> create(
         const TransformFactoryConfig& config,
         const OperationConfig& operation);
@@ -55,8 +47,6 @@ protected:
     {
         setSoftwareScratchPad(config);
     }
-
-    bool is1D = false;
 };
 
 }

@@ -1,7 +1,8 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
+
 
 #include "Expect.h"
 #include "GnaException.h"
@@ -12,15 +13,20 @@
 #include <chrono>
 #include <future>
 #include <utility>
+#include "Logger.h"
 
 using namespace GNA;
 
-RequestHandler::RequestHandler(uint32_t threadCount) : threadPool(threadCount)
-{}
-
 RequestHandler::~RequestHandler()
 {
-    clearRequestMap();
+    try
+    {
+        clearRequestMap();
+    }
+    catch (...)
+    {
+        Log->Error("RequestHandler destructor failed.\n");
+    }
 }
 
 uint32_t RequestHandler::GetNumberOfThreads() const
@@ -42,7 +48,7 @@ void RequestHandler::Enqueue(
     {
         std::lock_guard<std::mutex> lockGuard(lock);
 
-        if (requests.size() >= GNA_REQUEST_QUEUE_LENGTH)
+        if (requests.size() >= QueueLengthMax)
         {
             throw GnaException(Gna2StatusDeviceQueueError);
         }

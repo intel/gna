@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "HardwareModelScorable.h"
 
@@ -9,40 +9,38 @@
 #include "DriverInterface.h"
 #include "Expect.h"
 #include "GnaException.h"
+#include "gna2-memory-impl.h"
 #include "HardwareCapabilities.h"
-#include "Macros.h"
 #include "Memory.h"
 #include "MemoryContainer.h"
 #include "RequestConfiguration.h"
 #include "SoftwareModel.h"
-
-#include "common.h"
-#include "gna-api-status.h"
-#include "profiler.h"
 
 #include <utility>
 
 using namespace GNA;
 
 HardwareModelScorable::HardwareModelScorable(CompiledModel const & softwareModel,
-    DriverInterface &ddi, const HardwareCapabilities& hwCapsIn) :
+    DriverInterface &ddi, const HardwareCapabilities& hwCapsIn, const std::vector<std::unique_ptr<SubModel>>& subModelsIn) :
     HardwareModel(softwareModel, hwCapsIn),
-    driverInterface{ ddi }
+    driverInterface{ ddi },
+    subModels{ subModelsIn }
 {
+    Build();
 }
 
 uint32_t HardwareModelScorable::GetBufferOffsetForConfiguration(
     const BaseAddress& address,
     const RequestConfiguration& requestConfiguration) const
 {
-    auto offset = HardwareModel::GetBufferOffset(address);
+    auto offset = HardwareModel::GetBufferOffset(address).Offset;
     if (offset != 0)
     {
         return offset;
     }
 
     auto const modelSize = allocations.GetMemorySizeAlignedToPage();
-    offset = requestConfiguration.GetAllocations().GetBufferOffset(address, PAGE_SIZE, modelSize);
+    offset = requestConfiguration.GetAllocations().GetBufferOffset(address, MemoryBufferAlignment, modelSize);
     Expect::GtZero(offset, Gna2StatusMemoryBufferInvalid);
     return offset;
 }
@@ -55,52 +53,42 @@ void HardwareModelScorable::InvalidateConfig(uint32_t configId)
     }
 }
 
-uint32_t HardwareModelScorable::Score(
-    uint32_t layerIndex,
-    uint32_t layerCount,
-    const RequestConfiguration& requestConfiguration,
-    RequestProfiler *profiler,
-    KernelBuffers *buffers)
+void HardwareModelScorable::Score(ScoreContext & context)
 {
-    UNREFERENCED_PARAMETER(buffers);
-
-    if (layerIndex + layerCount > hardwareLayers.size())
+    if (context.layerIndex + context.layerCount > hardwareLayers.size())
     {
         throw GnaException(Gna2StatusXnnErrorNetLyrNo);
     }
-    for (auto i = layerIndex; i < layerIndex + layerCount; i++)
+    for (auto i = context.layerIndex; i < context.layerIndex + context.layerCount; i++)
     {
         Expect::NotNull(TryGetLayer(i), Gna2StatusXnnErrorNetLyrNo);
     }
 
     auto operationMode = xNN;
 
-    auto const & layer = model.GetLayer(layerIndex);
+    auto const & layer = model.GetLayer(context.layerIndex);
     if (layer.Operation == INTEL_GMM
-        && !hwCapabilities.IsLayerSupported(layer.Operation)
+        && !hwCapabilities.IsOperationSupported(layer.Operation)
         && hwCapabilities.HasFeature(LegacyGMM))
     {
-        Expect::InRange(layerCount, ui32_1, Gna2StatusXnnErrorNetLyrNo);
+        Expect::InRange(context.layerCount, 1u, Gna2StatusXnnErrorNetLyrNo);
         operationMode = GMM;
     }
 
-    Expect::InRange(layerCount,
-        ui32_1, hwCapabilities.GetMaximumLayerCount(),
-        Gna2StatusXnnErrorNetLyrNo);
+    hwCapabilities.ValidateOperationCount(context.layerCount);
 
-    SoftwareModel::LogAcceleration(AccelerationMode{ Gna2AccelerationModeHardware,true });
+    SoftwareModel::LogAcceleration(AccelerationMode{ Gna2AccelerationModeHardware });
     SoftwareModel::LogOperationMode(operationMode);
 
-    auto configId = requestConfiguration.Id;
-    HardwareRequest *hwRequest = nullptr;
-
+    auto configId = context.requestConfiguration.Id;
+    HardwareRequest *hwRequest;
     {
         std::lock_guard<std::mutex> lockGuard(hardwareRequestsLock);
         if (hardwareRequests.find(configId) == hardwareRequests.end())
         {
             auto const inserted = hardwareRequests.emplace(
                 configId,
-                std::make_unique<HardwareRequest>(*this, requestConfiguration, allocations));
+                std::make_unique<HardwareRequest>(*this, context.requestConfiguration, allocations));
             hwRequest = inserted.first->second.get();
         }
         else
@@ -108,29 +96,25 @@ uint32_t HardwareModelScorable::Score(
             hwRequest = hardwareRequests.at(configId).get();
         }
     }
-    hwRequest->Update(layerIndex, layerCount, operationMode);
+    hwRequest->Update(context.layerIndex, context.layerCount, operationMode);
 
-    profiler->Measure(Gna2InstrumentationPointLibExecution);
+    context.profiler.Measure(Gna2InstrumentationPointLibExecution);
 
-    auto const result = driverInterface.Submit(*hwRequest, profiler);
+    auto const result = driverInterface.Submit(*hwRequest, context.profiler);
+    context.profiler.AddResults(Gna2InstrumentationPointDrvPreprocessing, result.driverPerf.Preprocessing);
+    context.profiler.AddResults(Gna2InstrumentationPointDrvProcessing, result.driverPerf.Processing);
+    context.profiler.AddResults(Gna2InstrumentationPointDrvDeviceRequestCompleted, result.driverPerf.DeviceRequestCompleted);
+    context.profiler.AddResults(Gna2InstrumentationPointDrvCompletion, result.driverPerf.Completion);
 
-    if (profiler != nullptr)
-    {
-        profiler->AddResults(Gna2InstrumentationPointDrvPreprocessing, result.driverPerf.Preprocessing);
-        profiler->AddResults(Gna2InstrumentationPointDrvProcessing, result.driverPerf.Processing);
-        profiler->AddResults(Gna2InstrumentationPointDrvDeviceRequestCompleted, result.driverPerf.DeviceRequestCompleted);
-        profiler->AddResults(Gna2InstrumentationPointDrvCompletion, result.driverPerf.Completion);
-
-        profiler->AddResults(Gna2InstrumentationPointHwTotalCycles, result.hardwarePerf.total);
-        profiler->AddResults(Gna2InstrumentationPointHwStallCycles, result.hardwarePerf.stall);
-    }
+    context.profiler.AddResults(Gna2InstrumentationPointHwTotalCycles, result.hardwarePerf.total);
+    context.profiler.AddResults(Gna2InstrumentationPointHwStallCycles, result.hardwarePerf.stall);
 
     if (result.status != Gna2StatusSuccess && result.status != Gna2StatusWarningArithmeticSaturation)
     {
         throw GnaException(result.status);
     }
 
-    return (Gna2StatusWarningArithmeticSaturation == result.status) ? 1 : 0;
+    context.saturationCount += Gna2StatusWarningArithmeticSaturation == result.status ? 1 : 0;
 }
 
 void HardwareModelScorable::ValidateConfigBuffer(MemoryContainer const & requestAllocations,
@@ -138,7 +122,7 @@ void HardwareModelScorable::ValidateConfigBuffer(MemoryContainer const & request
 {
     auto configModelSize = allocations.GetMemorySizeAlignedToPage();
     configModelSize += requestAllocations.GetMemorySizeAlignedToPage();
-    configModelSize += RoundUp(bufferMemory.GetSize(), PAGE_SIZE);
+    configModelSize += RoundUp(bufferMemory.GetSize(), MemoryBufferAlignment);
 
     Expect::InRange(configModelSize, HardwareCapabilities::MaximumModelSize,
         Gna2StatusMemoryTotalSizeExceeded);
@@ -149,4 +133,9 @@ void HardwareModelScorable::prepareAllocationsAndModel()
     HardwareModel::prepareAllocationsAndModel();
     ldMemory->Map(driverInterface);
     getHwOffsetFunction = [this](const BaseAddress& buffer) { return GetBufferOffset(buffer); };
+}
+
+bool HardwareModelScorable::IsSoftwareLayer(uint32_t layerIndex) const
+{
+    return SubModel::IsSoftwareLayer(layerIndex, subModels);
 }

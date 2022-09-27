@@ -1,4 +1,4 @@
-# @copyright (C) 2020-2021 Intel Corporation
+# Copyright (C) 2018-2022 Intel Corporation
 # SPDX-License-Identifier: LGPL-2.1-or-later
 
 if(EXISTS ${PDB_PUBLIC})

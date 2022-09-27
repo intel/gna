@@ -1,13 +1,14 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #ifdef WIN32
 
 #include "WindowsDriverInterface.h"
 
 #include "GnaException.h"
+#include "gna2-memory-impl.h"
 #include "HardwareRequest.h"
 #include "Logger.h"
 #include "Macros.h"
@@ -36,6 +37,26 @@ WindowsDriverInterface::WindowsDriverInterface() :
     recoveryTimeout{ (DRV_RECOVERY_TIMEOUT + 1) * 1000 }
 {
     ZeroMemory(&overlapped, sizeof(overlapped));
+}
+
+WindowsDriverInterface::~WindowsDriverInterface()
+{
+    std::vector<uint64_t> keys;
+    for (auto &&[id, request] : memoryMapRequests)
+    {
+        keys.push_back(id);
+    }
+    for (auto && id : keys)
+    {
+        try
+        {
+            WindowsDriverInterface::MemoryUnmap(id);
+        }
+        catch (...)
+        {
+            GNA::Log->Warning("WindowsDriverInterface::MemoryUnmap(%llu), failed", id);
+        }
+    }
 }
 
 bool WindowsDriverInterface::OpenDevice(uint32_t deviceIndex)
@@ -124,6 +145,16 @@ void WindowsDriverInterface::MemoryUnmap(uint64_t memoryId)
     wait(*memoryMapOverlapped);
     memoryMapRequests.erase(memoryId);
 }
+
+void WindowsDriverInterface::QoSRequest(size_t size,
+    OverlappedWithEvent & ioHandle, void * input) const
+{
+    auto const inputConfig = reinterpret_cast<PGNA_INFERENCE_CONFIG_IN>(input);
+    inputConfig->ctrlFlags.ddiVersion = GNA_DDI_VERSION_3;
+    inputConfig->enhancedControlFlags.qosEnabled = 1;
+    InferenceRequest<Gna2StatusDeviceQueueError>(size, ioHandle, inputConfig, "GetOverlappedResult failed for SwFallback.\n");
+}
+
 /**
  Send workload to GNA driver for computation.
  The workload is sent in a form of Write Request.
@@ -134,7 +165,7 @@ void WindowsDriverInterface::MemoryUnmap(uint64_t memoryId)
  @param profiler Request profiling information to be filled.
  */
 RequestResult WindowsDriverInterface::Submit(HardwareRequest& hardwareRequest,
-    RequestProfiler * const profiler) const
+    RequestProfiler & profiler) const
 {
     auto bytesRead = DWORD{ 0 };
     RequestResult result = { 0 };
@@ -144,7 +175,7 @@ RequestResult WindowsDriverInterface::Submit(HardwareRequest& hardwareRequest,
 
     auto input = reinterpret_cast<PGNA_INFERENCE_CONFIG_IN>(hardwareRequest.CalculationData.get());
     auto * const ctrlFlags = &input->ctrlFlags;
-    ctrlFlags->ddiVersion = 2;
+    ctrlFlags->ddiVersion = GNA_DDI_VERSION_2;
     ctrlFlags->gnaMode = hardwareRequest.Mode;
     ctrlFlags->layerCount = hardwareRequest.LayerCount;
 
@@ -162,18 +193,22 @@ RequestResult WindowsDriverInterface::Submit(HardwareRequest& hardwareRequest,
         throw GnaException{ Gna2StatusXnnErrorLyrCfg };
     }
 
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestReady);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestReady);
 
-    auto ioResult = WriteFile(static_cast<HANDLE>(deviceHandle),
-        input, static_cast<DWORD>(hardwareRequest.CalculationSize),
-        nullptr, ioHandle);
-    checkStatus(ioResult);
+    if (hardwareRequest.IsSwFallbackEnabled())
+    {
+        QoSRequest(hardwareRequest.CalculationSize, ioHandle, input);
+    }
+    else
+    {
+        InferenceRequest(hardwareRequest.CalculationSize, ioHandle, input);
+    }
 
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestSent);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestSent);
 
-    GetOverlappedResultEx(deviceHandle, ioHandle, &bytesRead, recoveryTimeout , false);
+    GetOverlappedResultEx(deviceHandle, ioHandle, &bytesRead, recoveryTimeout, false);
 
-    profiler->Measure(Gna2InstrumentationPointLibDeviceRequestCompleted);
+    profiler.Measure(Gna2InstrumentationPointLibDeviceRequestCompleted);
 
     auto const output = reinterpret_cast<PGNA_INFERENCE_CONFIG_OUT>(input);
     auto const status = output->status;
@@ -190,6 +225,7 @@ RequestResult WindowsDriverInterface::Submit(HardwareRequest& hardwareRequest,
         if (profilerConfiguration != nullptr)
         {
             convertPerfResultUnit(result.driverPerf, profilerConfiguration->GetUnit());
+            convertPerfResultUnit(result.hardwarePerf, profilerConfiguration->GetUnit());
         }
         result.status = (status & STS_SATURATION_FLAG)
             ? Gna2StatusWarningArithmeticSaturation : Gna2StatusSuccess;
@@ -207,6 +243,10 @@ RequestResult WindowsDriverInterface::Submit(HardwareRequest& hardwareRequest,
         result.status = Gna2StatusDeviceCriticalFailure;
         break;
     default:
+        if (hardwareRequest.IsSwFallbackEnabled() && STATUS_DEVICE_BUSY == writeStatus)
+        {
+            throw GnaException(Gna2StatusDeviceQueueError);
+        }
         result.status = Gna2StatusDeviceIngoingCommunicationError;
         break;
     }
@@ -269,32 +309,47 @@ void WindowsDriverInterface::createRequestDescriptor(HardwareRequest& hardwareRe
 
 void WindowsDriverInterface::getDeviceCapabilities()
 {
-    auto bytesRead = DWORD{ 0 };
-    UINT64 params[3] = {
-        GNA_PARAM_DEVICE_TYPE,
-        GNA_PARAM_INPUT_BUFFER_S,
-        GNA_PARAM_RECOVERY_TIMEOUT
+    auto params = std::map<UINT64, std::pair<UINT64, bool /* newDDI */>>{
+        {GNA_PARAM_DEVICE_TYPE, { 0u, false } },
+        {GNA_PARAM_INPUT_BUFFER_S, { 0u, false } },
+        {GNA_PARAM_RECOVERY_TIMEOUT, { 0u, false } },
+        {GNA_PARAM_DDI_VERSION, { 0u, true } }
     };
 
-    UINT64 values[3];
-
-    for (uint32_t i = 0; i < sizeof(params) / sizeof(UINT64); i++)
+    for (auto &[param, value] : params)
     {
-        auto ioResult = DeviceIoControl(deviceHandle,
-            static_cast<DWORD>(GNA_IOCTL_GET_PARAM),
-            &params[i], sizeof(params[i]),
-            &values[i], sizeof(values[i]),
-            &bytesRead, &overlapped);
+        getDeviceCapabilityRequest(param, value.first, value.second);
+    }
 
+    driverCapabilities.deviceVersion = static_cast<Gna2DeviceVersion>(params[GNA_PARAM_DEVICE_TYPE].first);
+    driverCapabilities.hwInBuffSize = static_cast<uint32_t>(params[GNA_PARAM_INPUT_BUFFER_S].first);
+    driverCapabilities.recoveryTimeout = static_cast<uint32_t>(params[GNA_PARAM_RECOVERY_TIMEOUT].first);
+    recoveryTimeout = (driverCapabilities.recoveryTimeout + 1) * 1000;
+    driverCapabilities.perfCounterFrequency = getPerfCounterFrequency();
+    driverCapabilities.isSoftwareFallbackSupported = params[GNA_PARAM_DDI_VERSION].first >= GNA_DDI_VERSION_3;
+}
+
+void WindowsDriverInterface::getDeviceCapabilityRequest(UINT64 param, UINT64 & value, bool newDDI)
+{
+    try
+    {
+        auto bytesRead = DWORD{ 0 };
+        auto const ioResult = DeviceIoControl(deviceHandle,
+            static_cast<DWORD>(GNA_IOCTL_GET_PARAM),
+            const_cast<UINT64*>(&param), sizeof(UINT64),
+            &value, sizeof(UINT64),
+            &bytesRead, &overlapped);
         checkStatus(ioResult);
         wait(&overlapped);
     }
-
-    driverCapabilities.deviceVersion = Gna2DeviceVersionFromInt(values[0]);
-    driverCapabilities.hwInBuffSize = static_cast<uint32_t>(values[1]);
-    driverCapabilities.recoveryTimeout = static_cast<uint32_t>(values[2]);
-    recoveryTimeout = (driverCapabilities.recoveryTimeout + 1 ) * 1000;
-    driverCapabilities.perfCounterFrequency = getPerfCounterFrequency();
+    catch (const GnaException& e)
+    {
+        if (Gna2StatusDeviceIngoingCommunicationError != e.GetStatus() || !newDDI)
+        {
+            throw;
+        }
+        // else newDDI Unsupported Parameter
+    }
 }
 
 uint64_t WindowsDriverInterface::getPerfCounterFrequency()
@@ -316,7 +371,7 @@ std::vector<std::vector<T> > splitIntoNonEmpty(std::vector<T> delimitedList, T d
         {
             candidate.push_back(v);
         }
-        else if(!candidate.empty())
+        else if (!candidate.empty())
         {
             split.push_back(candidate);
             candidate.clear();
@@ -363,7 +418,7 @@ std::string WindowsDriverInterface::discoverDevice(uint32_t deviceIndex)
     }
     auto allDevices = splitIntoNonEmpty(gnaFileName, L'\0');
 
-    if(deviceIndex >= allDevices.size())
+    if (deviceIndex >= allDevices.size())
     {
         return "";
     }
@@ -391,16 +446,6 @@ void WindowsDriverInterface::verify(LPOVERLAPPED ioctl) const
         0,
         Gna2StatusDriverCommunicationMemoryMapError,
         "MemoryMap failed.\n");
-}
-
-void WindowsDriverInterface::checkStatus(BOOL ioResult) const
-{
-    throwOnFailedPredicate(
-        [](BOOL ioResult, DWORD error)
-            {return (ioResult == 0 && ERROR_IO_PENDING != error); },
-        0,
-        Gna2StatusDeviceOutgoingCommunicationError,
-        nullptr);
 }
 
 std::string WindowsDriverInterface::lastErrorToString(DWORD lastError)
@@ -459,6 +504,7 @@ OverlappedWithEvent::OverlappedWithEvent()
 OverlappedWithEvent::~OverlappedWithEvent()
 {
     const auto success = CloseHandle(overlapped.hEvent);
+    overlapped = {};
     if (!success)
     {
         Log->Error("CloseHandle() failed\n");

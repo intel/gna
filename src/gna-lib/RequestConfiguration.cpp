@@ -1,20 +1,16 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "RequestConfiguration.h"
 
 #include "ActiveList.h"
-#include "Address.h"
 #include "CompiledModel.h"
 #include "Expect.h"
 #include "HardwareCapabilities.h"
-#include "KernelArguments.h"
 #include "Layer.h"
 #include "LayerConfiguration.h"
-
-#include "gna-api-status.h"
 
 #include <memory>
 #include <utility>
@@ -22,12 +18,13 @@
 using namespace GNA;
 
 RequestConfiguration::RequestConfiguration(CompiledModel& model, uint32_t configId,
-    DeviceVersion consistentDeviceIn) :
+    const HardwareCapabilities & hardwareCapabilitiesIn) :
     Model{ model },
     Id{ configId },
-    BufferElementCount{ HardwareCapabilities::GetHardwareConsistencySettings(consistentDeviceIn) },
-    consistentDevice{ consistentDeviceIn }
+    hardwareCapabilities{ hardwareCapabilitiesIn },
+    bufferConfigValidator{ Model.GetBufferConfigValidator() }
 {
+    UpdateConsistency(hardwareCapabilities.GetDeviceVersion());
 }
 
 void RequestConfiguration::AddBuffer(uint32_t operandIndex, uint32_t layerIndex, void *address)
@@ -44,7 +41,7 @@ void RequestConfiguration::AddBuffer(uint32_t operandIndex, uint32_t layerIndex,
         addBufferForSingleLayer(context);
 
     }
-    Model.InvalidateHardwareRequestConfig(Id);
+    Model.InvalidateRequestConfig(Id);
 }
 
 RequestConfiguration::AddBufferContext::AddBufferContext(CompiledModel & model,
@@ -96,9 +93,11 @@ void RequestConfiguration::applyBufferForSingleLayer(AddBufferContext & context)
     {
         auto & layerConfiguration = getLayerConfiguration(context.LayerIndex);
         layerConfiguration.EmplaceBuffer(context.OperandIndex, context.Address);
+        context.Operand->ValidateBuffer(context.Address);
 
         // if invalidate fails, we don't know if it's already been used thus no recovery from this
         context.SoftwareLayer->UpdateKernelConfigs(layerConfiguration);
+        updateMissingBufferForSingleLayer(context);
     }
 }
 
@@ -107,6 +106,14 @@ LayerConfiguration & RequestConfiguration::getLayerConfiguration(uint32_t layerI
     auto const found = LayerConfigurations.emplace(layerIndex, std::make_unique<LayerConfiguration>());
     auto & layerConfiguration = *found.first->second;
     return layerConfiguration;
+}
+
+void RequestConfiguration::updateMissingBufferForSingleLayer(AddBufferContext& context)
+{
+    if (context.OperandIndex < ScratchpadOperandKernelIndex)
+    {
+        bufferConfigValidator.addValidBuffer(context.LayerIndex, context.OperandIndex);
+    }
 }
 
 void RequestConfiguration::AddActiveList(uint32_t layerIndex, const ActiveList& activeList)
@@ -127,34 +134,37 @@ void RequestConfiguration::AddActiveList(uint32_t layerIndex, const ActiveList& 
     ++ActiveListCount;
 
     layer.UpdateKernelConfigs(layerConfiguration);
-    Model.InvalidateHardwareRequestConfig(Id);
+    Model.InvalidateRequestConfig(Id);
 }
 
-void RequestConfiguration::SetHardwareConsistency(
-    DeviceVersion consistentDeviceIn)
+void RequestConfiguration::EnforceAcceleration(Gna2AccelerationMode accelerationMode)
 {
-    if (Gna2DeviceVersionSoftwareEmulation != consistentDeviceIn)
+    if (Gna2AccelerationModeHardwareWithSoftwareFallback == accelerationMode)
     {
-        Expect::True(Model.IsFullyHardwareCompatible(HardwareCapabilities{ consistentDeviceIn }), Gna2StatusAccelerationModeNotSupported);
-        BufferElementCount = HardwareCapabilities::GetHardwareConsistencySettings(consistentDeviceIn);
-        BufferElementCountFor3_0 = HardwareCapabilities::GetHardwareConsistencySettingsFor3_0(consistentDeviceIn);
+        Expect::True(hardwareCapabilities.IsSoftwareFallbackSupported(), Gna2StatusAccelerationModeNotSupported);
     }
-    Acceleration.SetHwConsistency(Gna2DeviceVersionSoftwareEmulation != consistentDeviceIn);
-    consistentDevice = consistentDeviceIn;
-}
-
-void RequestConfiguration::EnforceAcceleration(Gna2AccelerationMode accelMode)
-{
-    if (accelMode == Gna2AccelerationModeHardware)
+    if (AccelerationMode{ accelerationMode }.IsHardwareEnforced())
     {
         Expect::True(Model.IsHardwareEnforcedModeValid(), Gna2StatusAccelerationModeNotSupported);
     }
-    Acceleration.SetMode(accelMode);
+    Acceleration.SetMode(accelerationMode);
 }
 
 DeviceVersion RequestConfiguration::GetConsistentDevice() const
 {
-    return consistentDevice;
+    return hardwareCapabilities.GetDeviceVersion();
+}
+
+void RequestConfiguration::AssignProfilerConfig(ProfilerConfiguration* config)
+{
+    if (hardwareCapabilities.IsHardwareSupported() // else ignore HwInstrumentationMode
+        && config->GetHwInstrumentationMode() > Gna2InstrumentationModeWaitForMmuTranslation
+        && !hardwareCapabilities.HasFeature(NewPerformanceCounters))
+    {
+        throw GnaException(Gna2StatusDeviceVersionInvalid);
+    }
+
+    profilerConfiguration = config;
 }
 
 uint8_t RequestConfiguration::GetHwInstrumentationMode() const
@@ -164,6 +174,14 @@ uint8_t RequestConfiguration::GetHwInstrumentationMode() const
         return profilerConfiguration->GetHwPerfEncoding();
     }
     return 0;
+}
+
+void RequestConfiguration::UpdateConsistency(DeviceVersion consistentVersion)
+{
+    BufferElementCount =
+        HardwareCapabilities::GetHardwareConsistencySettings(consistentVersion);
+    BufferElementCountFor3_0 =
+        HardwareCapabilities::GetHardwareConsistencySettingsFor3_0(consistentVersion);
 }
 
 void RequestConfiguration::storeAllocationIfNew(void const *buffer, uint32_t bufferSize)

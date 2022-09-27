@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 #include <cstdint>
@@ -17,7 +17,6 @@ public:
         return bytesPerElement;
     }
 };
-
 enum KernelBiasMode
 {
     KernelBiasModePerFilter,

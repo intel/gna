@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -57,100 +57,61 @@ typedef void (*TransposeKernel)(TransposeConfig const * const config);
 
 typedef void (*CopyKernel)(CopyConfig const * const config);
 
-// Xnn kernel provider
-// Contains XNN kernel function pointers for selected acceleration
-typedef struct _XnnKernel
+enum KernelType
 {
-    AffineKernel affineSingle1Bfull;
-    AffineKernel affineSingle2Bfull;
+    affineSingle1Bfull,
+    affineSingle2Bfull,
+    affineSingle1Bal,
+    affineSingle2Bal,
+    affineMulti1B,
+    affineMulti2B,
+    diagonal1B,
+    diagonal2B,
+    recurrent1B,
+    recurrent2B,
+    transpose1B,
+    transpose2B,
+    convolution,
+    convolutionPooling,
+    pwl,
+    copy,
+    affineSingle1B1Bfull,
+    affineSingle2B1Bfull,
+    affineSingle1B2Bfull,
+    affineSingle2B2Bfull,
+    affineSingle1B1Bal,
+    affineSingle2B1Bal,
+    affineSingle1B2Bal,
+    affineSingle2B2Bal,
+    affineMulti1B1B,
+    affineMulti2B1B,
+    affineMulti1B2B,
+    affineMulti2B2B,
+    diagonal1B1B,
+    diagonal2B1B,
+    diagonal1B2B,
+    diagonal2B2B,
+    recurrent1B1B,
+    recurrent2B1B,
+    recurrent1B2B,
+    recurrent2B2B,
+    convolution1B,
+    convolutionPooling1B,
+    convolution2B,
+    convolutionPooling2B,
+    copy1B,
+    copy2B,
+    convolution2D1B1B,
+    convolution2D1B2B,
+    convolution2D2B1B,
+    convolution2D2B2B,
+    convolutionPooling2D1B,
+    convolutionPooling2D2B,
+    convolutionPooling2D4B,
+};
 
-    AffineActiveListKernel affineSingle1Bal;
-    AffineActiveListKernel affineSingle2Bal;
-
-    AffineKernel affineMulti1B;
-    AffineKernel affineMulti2B;
-
-    AffineKernel diagonal1B;
-    AffineKernel diagonal2B;
-
-    RecurrentKernel recurrent1B;
-    RecurrentKernel recurrent2B;
-
-    ConvolutionKernel convolution;
-    ConvolutionPoolingKernel convolutionPooling;
-
-    ActivationKernel pwl;
-
-    TransposeKernel transpose;
-
-    CopyKernel copy;
-
-    AffineKernel affineSingle1B1Bfull;
-    AffineKernel affineSingle2B1Bfull;
-    AffineKernel affineSingle1B2Bfull;
-    AffineKernel affineSingle2B2Bfull;
-    AffineActiveListKernel affineSingle1B1Bal;
-    AffineActiveListKernel affineSingle2B1Bal;
-    AffineActiveListKernel affineSingle1B2Bal;
-    AffineActiveListKernel affineSingle2B2Bal;
-    AffineKernel affineMulti1B1B;
-    AffineKernel affineMulti2B1B;
-    AffineKernel affineMulti1B2B;
-    AffineKernel affineMulti2B2B;
-    AffineKernel diagonal1B1B;
-    AffineKernel diagonal2B1B;
-    AffineKernel diagonal1B2B;
-    AffineKernel diagonal2B2B;
-    RecurrentKernel recurrent1B1B;
-    RecurrentKernel recurrent2B1B;
-    RecurrentKernel recurrent1B2B;
-    RecurrentKernel recurrent2B2B;
-    ConvolutionKernel convolution1B;
-    ConvolutionPoolingKernel convolutionPooling1B;
-    ConvolutionKernel convolution2B;
-    ConvolutionPoolingKernel convolutionPooling2B;
-    TransposeKernel transpose1B;
-    TransposeKernel transpose2B;
-    CopyKernel copy1B;
-    CopyKernel copy2B;
-
-    ConvolutionKernel2D convolution2D1B1B;
-    ConvolutionKernel2D convolution2D1B2B;
-    ConvolutionKernel2D convolution2D2B1B;
-    ConvolutionKernel2D convolution2D2B2B;
-
-    PoolingKernel2D convolutionPooling2D1B;
-    PoolingKernel2D convolutionPooling2D2B;
-    PoolingKernel2D convolutionPooling2D4B;
-} XnnKernel;
-
-// Export list of available Xnn kernels providers
-
-// FAST VERSIONS
-// generic Xnn kernel provider
-extern XnnKernel xnnKernel_generic;
-
-// sse4.2 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_sse4;
-
-// avx1 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_avx1;
-
-// avx2 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_avx2;
-
-// SATURATED VERSIONS
-// generic Xnn kernel provider
-extern XnnKernel xnnKernel_generic_sat;
-
-// sse4.2 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_sse4_sat;
-
-// avx1 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_avx1_sat;
-
-// avx2 accelerated Xnn kernel provider
-extern XnnKernel xnnKernel_avx2_sat;
+template<Gna2AccelerationMode accelerationMode>
+VoidKernel GetXnnKernel(KernelType type);
 
 void setHwCompatibilityMode_generic(uint32_t bufferElementCounts[2][XNN_N_GROUP_MAX]);
 void setHwCompatibilityMode_sse4(uint32_t bufferElementCounts[2][XNN_N_GROUP_MAX]);

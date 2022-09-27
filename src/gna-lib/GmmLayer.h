@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -9,10 +9,8 @@
 #include "KernelArguments.h"
 #include "Layer.h"
 #include "Weight.h"
-
-#include "common.h"
 #include "gmm.h"
-#include "gna-api-types-gmm.h"
+#include "GmmLayerCapabilities.h"
 
 #include <cstdint>
 #include <map>
@@ -27,18 +25,13 @@ struct LayerConfiguration;
 class GmmOperation : public Layer
 {
 public:
-    template<class T>
-    GmmOperation(const T& layer, const BaseValidator& validatorIn) :
-        Layer(layer, validatorIn, { GmmTransform }, BaseAddress())
-    {}
+    GmmOperation(const Gna2Operation& operation, const LayerValidator& validatorIn);
 
     virtual ~GmmOperation() = default;
 
     virtual Tensor const & GetOperand(uint32_t operandIndex) const override;
 
     virtual void VerifyHas1BInputAnd2BWeight() override;
-
-    virtual DataConfig GetDataMode() const override;
 };
 
 class GmmFunction : public TransformAl<GmmConfig, GmmMaxMix, GmmMaxMixActiveList>

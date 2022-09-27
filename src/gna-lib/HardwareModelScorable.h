@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -10,10 +10,6 @@
 #include "HardwareRequest.h"
 #include "IScorable.h"
 #include "MemoryContainer.h"
-
-#include "KernelArguments.h"
-
-#include "gna-api.h"
 
 #include <cstdint>
 #include <memory>
@@ -34,17 +30,17 @@ class HardwareModelScorable : public HardwareModel, public IScorable
 public:
 
     HardwareModelScorable(CompiledModel const & softwareModel, DriverInterface &ddi,
-        const HardwareCapabilities& hwCapsIn);
+        const HardwareCapabilities& hwCapsIn, const std::vector<std::unique_ptr<SubModel>>& subModelsIn);
     virtual ~HardwareModelScorable() = default;
+
+    HardwareModelScorable(const HardwareModelScorable&) = delete;
+    HardwareModelScorable(HardwareModelScorable&&) = delete;
+    HardwareModelScorable& operator=(const HardwareModelScorable&) = delete;
+    HardwareModelScorable& operator=(HardwareModelScorable&&) = delete;
 
     void InvalidateConfig(uint32_t configId);
 
-    virtual uint32_t Score(
-        uint32_t layerIndex,
-        uint32_t layerCount,
-        const RequestConfiguration& requestConfiguration,
-        RequestProfiler *profiler,
-        KernelBuffers *buffers) override;
+    void Score(ScoreContext & context) override;
 
     uint32_t GetBufferOffsetForConfiguration(
         const BaseAddress& address,
@@ -59,7 +55,11 @@ protected:
     std::map<uint32_t, std::unique_ptr<HardwareRequest>> hardwareRequests;
     std::mutex hardwareRequestsLock;
 
-    virtual void prepareAllocationsAndModel() override;
+    const std::vector<std::unique_ptr<SubModel>>& subModels;
+
+    void prepareAllocationsAndModel() override;
+
+    bool IsSoftwareLayer(uint32_t layerIndex) const override;
 };
 
 }

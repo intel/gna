@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gna2-model-impl.h"
 #include "gna2-common-impl.h"
@@ -16,9 +16,11 @@
 #include "gna2-model-api.h"
 #include "gna2-common-api.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 using namespace GNA;
+
+
 
 GNA2_API enum Gna2Status Gna2ModelCreate(uint32_t deviceIndex,
     struct Gna2Model const * model, uint32_t * modelId)
@@ -135,7 +137,7 @@ GNA2_API uint32_t Gna2DataTypeGetSize(enum Gna2DataType type)
     {
         return ModelWrapper::DataTypeGetSize(type);
     };
-    return ApiWrapper::ExecuteSafely(command, Gna2NotSupportedU32);
+    return ApiWrapper::ExecuteSafely(command, GNA2_NOT_SUPPORTED);
 }
 
 GNA2_API uint32_t Gna2ShapeGetNumberOfElements(struct Gna2Shape const * shape)
@@ -144,7 +146,7 @@ GNA2_API uint32_t Gna2ShapeGetNumberOfElements(struct Gna2Shape const * shape)
     {
         return ModelWrapper::ShapeGetNumberOfElements(shape);
     };
-    return ApiWrapper::ExecuteSafely(command, Gna2NotSupportedU32);
+    return ApiWrapper::ExecuteSafely(command, GNA2_NOT_SUPPORTED);
 }
 
 GNA2_API uint32_t Gna2TensorGetSize(struct Gna2Tensor const * tensor)
@@ -155,7 +157,7 @@ GNA2_API uint32_t Gna2TensorGetSize(struct Gna2Tensor const * tensor)
         auto const apiTensor = std::make_unique<Tensor>(*tensor);
         return apiTensor->Size;
     };
-    return ApiWrapper::ExecuteSafely(command, Gna2NotSupportedU32);
+    return ApiWrapper::ExecuteSafely(command, GNA2_NOT_SUPPORTED);
 }
 
 GNA2_API struct Gna2Shape Gna2ShapeInitScalar()
@@ -361,7 +363,6 @@ GNA2_API enum Gna2Status Gna2OperationInitRecurrent(
     };
     return ApiWrapper::ExecuteSafely(command);
 }
-
 GNA2_API enum Gna2Status Gna2OperationInitConvolution(
     struct Gna2Operation * operation, Gna2UserAllocator userAllocator,
     struct Gna2Tensor * inputs, struct Gna2Tensor * outputs,

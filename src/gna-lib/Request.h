@@ -1,15 +1,12 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
-#include "profiler.h"
-
 #include "gna2-common-api.h"
-
-#include "gna-api.h"
+#include "gna2-instrumentation-api.h"
 
 #include <future>
 #include <memory>
@@ -31,6 +28,7 @@ class RequestProfiler
 public:
     static const uint64_t MICROSECOND_MULTIPLIER = 1000000;
     static const uint64_t MILLISECOND_MULTIPLIER = 1000;
+    static const uint64_t DEVICE_CLOCK_FREQUENCY = 400'000'000;
 
     static std::unique_ptr<RequestProfiler> Create(ProfilerConfiguration* config);
 
@@ -55,7 +53,7 @@ class DisabledProfiler : public RequestProfiler
 public:
     DisabledProfiler() : RequestProfiler(false)
     {
-        
+
     }
 
     void Measure(Gna2InstrumentationPoint point) override;
@@ -97,7 +95,7 @@ public:
 
     void operator()(KernelBuffers *buffers)
     {
-        scoreTask(buffers, Profiler.get());
+        scoreTask(buffers, *Profiler);
     }
 
     // External id (0-GNA_REQUEST_WAIT_ANY)
@@ -107,7 +105,7 @@ public:
     std::unique_ptr<RequestProfiler> Profiler;
 
 private:
-    std::packaged_task<Gna2Status(KernelBuffers *buffers, RequestProfiler *profiler)> scoreTask;
+    std::packaged_task<Gna2Status(KernelBuffers *buffers, RequestProfiler &profiler)> scoreTask;
 
     std::future<Gna2Status> future;
 };

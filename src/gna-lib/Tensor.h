@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -11,8 +11,6 @@
 #include "ParameterLimits.h"
 #include "Shape.h"
 
-#include "gna-api-status.h"
-#include "gna-api-types-xnn.h"
 
 #include <cstdint>
 
@@ -22,17 +20,16 @@ class Validator;
 
 struct Tensor : public Component
 {
-    Tensor(const ApiTensor& tensor);
+    Tensor(const ApiTensor& tensor, uint32_t operandIndex = Gna2DisabledU32);
 
-    Tensor(const ApiTensor& tensor, gna_tensor_order order, const Validator& validator);
+    Tensor(const ApiTensor& tensor, gna_tensor_order order, const Validator& validator, uint32_t operandIndex = Gna2DisabledU32);
 
-    Tensor(const ApiTensor& apiTensor, const Validator& validatorIn);
+    Tensor(const ApiTensor& apiTensor, const Validator& validatorIn, uint32_t operandIndex = Gna2DisabledU32);
 
-    Tensor(const Shape& dimensions, const DataType dataType,
-        const TensorMode tensorMode, void const * buffer);
+    Tensor(const Shape& dimensions, const DataMode & dataMode, void const * buffer, uint32_t operandIndex = Gna2DisabledU32);
 
-    Tensor(const Shape& dimensions, const DataMode& dataMode,
-        void const * buffer, const Validator& validatorIn);
+    Tensor(const Shape& dimensions, const DataMode & dataMode,
+        void const * buffer, const Validator& validatorIn, uint32_t operandIndex = Gna2DisabledU32);
 
     virtual ~Tensor() = default;
 
@@ -48,6 +45,11 @@ struct Tensor : public Component
     virtual operator void* () const
     {
         return Buffer;
+    }
+
+    bool operator == (const std::nullptr_t &right) const
+    {
+        return Buffer == right;
     }
 
     explicit operator ApiTensor() const
@@ -79,7 +81,7 @@ struct Tensor : public Component
     }
 
 protected:
-    Tensor(const Tensor& tensor, const Validator& validatorIn);
+    Tensor(const Tensor& tensor, const Validator& validatorIn, uint32_t operandIndex = Gna2DisabledU32);
 
     void validate() const;
 
@@ -88,31 +90,17 @@ protected:
         return getGroupingAndElements(operation, validatorIn).first;
     }
 
-    uint32_t getGrouping(const nn_layer& layer) const
-    {
-        return getGroupingAndElements(layer).first;
-    }
-
     uint32_t getElementCount(const Gna2Operation& operation, const LayerValidator& validatorIn) const
     {
         return getGroupingAndElements(operation, validatorIn).second;
     }
 
-    uint32_t getElementCount(const nn_layer& layer) const
-    {
-        return getGroupingAndElements(layer).second;
-    }
-
     // Returns pair<grouping, elementCount>
     virtual std::pair<uint32_t, uint32_t> getGroupingAndElements(
         const Gna2Operation& operation, const LayerValidator& validatorIn) const;
-    // Returns pair<grouping, elementCount>
-    virtual std::pair<uint32_t, uint32_t> getGroupingAndElements(const nn_layer& layer) const;
 
 private:
     static uint32_t getEffectiveSize(const DataMode& mode, uint32_t count);
-
-    void validateDimensions() const;
 };
 
 struct TensorLimits : public ComponentLimits
@@ -120,14 +108,14 @@ struct TensorLimits : public ComponentLimits
     TensorLimits(const ComponentLimits limits, const DataModeLimits& modes) :
         ComponentLimits{ limits },
         Modes{ modes },
-        Align{ GNA_MEM_ALIGN, Gna2StatusMemoryAlignmentInvalid }
+        addressAlign{ GNA_MEM_ALIGN, Gna2StatusMemoryAlignmentInvalid }
     {
     }
 
     TensorLimits(const OrderLimits order, const ShapeLimits& dimensions, const DataModeLimits& modes) :
         ComponentLimits{ order, dimensions },
         Modes{ modes },
-        Align{ GNA_MEM_ALIGN, Gna2StatusMemoryAlignmentInvalid }
+        addressAlign{ GNA_MEM_ALIGN, Gna2StatusMemoryAlignmentInvalid }
     {
     }
 
@@ -135,16 +123,44 @@ struct TensorLimits : public ComponentLimits
         const AlignLimits& align) :
         ComponentLimits{ order, dimensions },
         Modes{ modes },
-        Align{ align }
+        addressAlign{ align }
     {
     }
 
+    const AlignLimits& GetAddressAlign() const;
+    static void OverrideAlign(const uint32_t newAlign);
     const DataModeLimits Modes;
-    const AlignLimits Align;
+private:
+    const AlignLimits addressAlign;
+    static const AlignLimits* overridenAlign;
 };
 
+template<uint32_t OperandIndex>
+struct OperandTensor : public Tensor
+{
+    OperandTensor(const Shape& dimensions, const DataMode& dataMode,
+        void * buffer, const Validator& validatorIn) :
+        Tensor{ dimensions, dataMode, buffer, validatorIn, OperandIndex }
+    {}
+
+    OperandTensor(const Gna2Tensor &apiTensor, const Validator& validatorIn) :
+        Tensor{ apiTensor, validatorIn, OperandIndex }
+    {}
+
+    virtual ~OperandTensor() = default;
+};
+
+struct OutputTensor : public Tensor
+{
+    OutputTensor(const Shape& dimensions, const DataMode& dataMode,
+        void * buffer, const LayerValidator & validatorIn, const FullCapabilitiesMap & capabilitiesIn) :
+        Tensor{ dimensions, dataMode, buffer, Validator{ validatorIn, capabilitiesIn, true }, OutputOperandIndex }
+    {}
+
+    virtual ~OutputTensor() = default;
+};
+
+using WeightScalesTensor = OperandTensor<WeightScaleFactorOperandIndex>;
+using PwlTensor = OperandTensor<PwlOperandIndex>;
+
 }
-
-
-
-

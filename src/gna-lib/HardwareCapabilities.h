@@ -1,19 +1,21 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
-#include "common.h"
-#include "gna-api.h"
-#include "gna-api-types-xnn.h"
+#include "Capabilities.h"
+
+#include "WindowsDriverInterface.h"
+
+#include "gna2-capability-api.h"
+#include "gna2-common-impl.h"
 
 #include <array>
 #include <cstdint>
 #include <map>
-
-#include "gna2-common-impl.h"
+#include <set>
 
 namespace GNA
 {
@@ -26,22 +28,20 @@ enum GnaFeature
     LegacyGMM,
     GMMLayer,
     MultiBias,
-    L1Distance,
-    L2Distance,
-    ComputerVision,
     NewPerformanceCounters,
     CNN2D,
+    CNN1D, // Only used for switching HW LD mode
 };
 
 // buffer array size for single precision
-static constexpr uint32_t BufferArraySizeSingle = XNN_N_GROUP_MAX;
+static constexpr uint32_t BufferArraySizeSingle = BatchSizeMax;
 static constexpr uint32_t BufferArraySize = 2 * BufferArraySizeSingle;
 
 struct GenerationCapabilities
 {
-    gna_device_generation Generation;
+    Gna2DeviceGeneration Generation;
     uint32_t MaximumLayerCount;
-    std::map<GnaFeature, bool> Features;
+    std::set<GnaFeature> Features;
     uint32_t ComputeEngineCount;
     std::map<const uint32_t /* input precision */, const uint32_t> MacCountPerCE;
     uint32_t BufferSizesPerCEInKB;
@@ -51,83 +51,137 @@ struct GenerationCapabilities
     std::array<uint32_t, BufferArraySize> BufferElementCount3_0Workaround;
 };
 
+using DevVerGenMap = std::map<DeviceVersion, const GenerationCapabilities>;
+
 class HardwareCapabilities
 {
 public:
-    explicit HardwareCapabilities(DeviceVersion deviceVersionIn = DefaultDeviceVersion);
+    virtual ~HardwareCapabilities() = default;
+    HardwareCapabilities(const HardwareCapabilities&) = delete;
+    HardwareCapabilities(HardwareCapabilities&&) = delete;
+    HardwareCapabilities& operator=(const HardwareCapabilities&) = delete;
+    HardwareCapabilities& operator=(HardwareCapabilities&&) = delete;
 
-    void DiscoverHardware(const DriverCapabilities& discoveredDriver);
-
-    static uint32_t const * GetHardwareConsistencySettings(DeviceVersion deviceVersion);
-    static uint32_t const * GetHardwareConsistencySettingsFor3_0(DeviceVersion deviceVersion);
+    static uint32_t const * GetHardwareConsistencySettings(DeviceVersion deviceVersionIn);
+    static uint32_t const * GetHardwareConsistencySettingsFor3_0(DeviceVersion deviceVersionIn);
 
     // For now all hardware generations share the same maximum model size
     // in the future it's possible to integrate it as GenerationCapabilities field
     static const uint32_t MaximumModelSize;
 
-    static bool Is3_0Generation(gna_device_generation generation);
-    static bool Is3_0Device(DeviceVersion deviceVersion);
+    static bool Is3_0Device(DeviceVersion deviceVersionIn);
 
-    static DeviceVersion GetDeviceVersion(gna_device_generation generation);
+    static uint32_t GetMaximumLayerCount(DeviceVersion deviceVersionIn);
 
-    static uint32_t GetMaximumLayerCount(DeviceVersion deviceVersion);
+    static uint32_t GetComputeEngineCount(DeviceVersion deviceVersionIn);
 
-    static uint32_t GetComputeEngineCount(DeviceVersion deviceVersion);
-
-    // Gets the number of data elements that may be stored in hw buffer
-    static uint32_t GetBufferElementCount(DeviceVersion deviceVersion,
-        uint32_t grouping, uint32_t inputPrecision = GNA_INT16);
-
-    uint32_t GetBufferElementCount(uint32_t grouping, uint32_t inputPrecision = GNA_INT16) const
+    uint32_t GetBufferElementCount(uint32_t grouping, uint32_t inputPrecision = Gna2DataTypeInt16) const
     {
         return GetBufferElementCount(deviceVersion, grouping, inputPrecision);
     }
 
     DeviceVersion GetDeviceVersion() const;
 
-    DeviceVersion GetHardwareDeviceVersion() const
+    virtual DeviceVersion GetHardwareDeviceVersion() const
+    {
+        return GetDeviceVersion();
+    }
+
+    static Gna2DeviceGeneration GetDeviceGeneration(DeviceVersion deviceVersionIn);
+
+    Gna2DeviceGeneration GetDeviceGeneration() const;
+
+    bool Is3_0Generation() const;
+
+    uint32_t GetMaximumLayerCount() const;
+
+    void ValidateOperationCount(uint32_t operationCount) const;
+
+    static void ValidateOperationCount(uint32_t operationCount, Gna2DeviceVersion version);
+
+    bool IsOperationSupported(nn_operation operation) const;
+
+    virtual bool IsHardwareSupported() const
+    {
+        return false;
+    }
+
+    bool HasFeature(GnaFeature feature) const;
+
+    virtual bool IsSoftwareFallbackSupported() const
+    {
+        return false;
+    }
+
+protected:
+    explicit HardwareCapabilities(DeviceVersion deviceVersionIn = DefaultDeviceVersion);
+
+    static bool Is3_0Generation(Gna2DeviceGeneration generation);
+
+    static DevVerGenMap& getCapsMap();
+
+    static const GenerationCapabilities& getGenerationCapabilities(DeviceVersion deviceVersionIn);
+
+    static void initHardwareConsistencySettings3_0(GenerationCapabilities& caps, bool isWorkaround = false);
+
+    // Gets the number of data elements that may be stored in hw buffer
+    static uint32_t GetBufferElementCount(DeviceVersion deviceVersionIn,
+        uint32_t grouping, uint32_t inputPrecision = Gna2DataTypeInt16);
+
+    static uint32_t getBufferElementCount3_0(uint32_t ceCount, uint32_t bufferSizeInKB,
+        uint32_t grouping, uint32_t inputPrecision = Gna2DataTypeInt16);
+
+    static uint32_t GetBufferSizeInKB(DeviceVersion deviceVersionIn);
+
+    DeviceVersion deviceVersion;
+};
+
+class HardwareCapabilitiesDevice final : public HardwareCapabilities
+{
+public:
+    explicit HardwareCapabilitiesDevice(const DriverCapabilities& discoveredDevice);
+    virtual ~HardwareCapabilitiesDevice() = default;
+
+    HardwareCapabilitiesDevice(const HardwareCapabilitiesDevice&) = delete;
+    HardwareCapabilitiesDevice(HardwareCapabilitiesDevice&&) = delete;
+    HardwareCapabilitiesDevice& operator=(const HardwareCapabilitiesDevice&) = delete;
+    HardwareCapabilitiesDevice& operator=(HardwareCapabilitiesDevice&&) = delete;
+
+    DeviceVersion GetHardwareDeviceVersion() const override
     {
         return IsHardwareSupported()
             ? GetDeviceVersion()
             : Gna2DeviceVersionSoftwareEmulation;
     }
 
-    gna_device_generation GetDeviceGeneration() const;
-
-    bool Is3_0Generation() const;
-
-    uint32_t GetMaximumLayerCount() const;
-
-    bool IsLayerSupported(nn_operation operation) const;
-
-    bool IsHardwareSupported() const
+    bool IsHardwareSupported() const override
     {
-        return hardwareSupported;
+        return isHardwareSupported;
     }
 
-    bool HasFeature(GnaFeature feature) const;
+    bool IsSoftwareFallbackSupported() const override
+    {
+        return isSoftwareFallbackSupported;
+    }
 
-private:
-    static std::map<DeviceVersion, const GenerationCapabilities>& getCapsMap();
+protected:
+    static bool isHwValid(const DriverCapabilities& discoveredDevice);
 
-    static const GenerationCapabilities& getGenerationCapabilities(DeviceVersion deviceVersionIn);
+    const bool isHardwareSupported;
 
-    static void initHardwareConsistencySettings3_0(GenerationCapabilities& caps, bool isWorkaround = false);
+    const bool isSoftwareFallbackSupported;
+};
 
-    static uint32_t getBufferElementCount3_0(uint32_t ceCount, uint32_t bufferSizeInKB,
-        uint32_t grouping, uint32_t inputPrecision = GNA_INT16);
+class HardwareCapabilitiesExport final : public HardwareCapabilities
+{
+public:
+    explicit HardwareCapabilitiesExport(DeviceVersion deviceVersionIn);
+    virtual ~HardwareCapabilitiesExport() = default;
 
-    uint32_t GetBufferSizeInKB() const;
-
-    static uint32_t GetBufferSizeInKB(DeviceVersion deviceVersion);
-
-    bool hardwareSupported = false;
-
-    DeviceVersion deviceVersion;
-
-    uint32_t bufferSize;
-
-    uint32_t driverRecoveryTimeout = 0;
+    HardwareCapabilitiesExport(const HardwareCapabilitiesExport&) = delete;
+    HardwareCapabilitiesExport(HardwareCapabilitiesExport&&) = delete;
+    HardwareCapabilitiesExport& operator=(const HardwareCapabilitiesExport&) = delete;
+    HardwareCapabilitiesExport& operator=(HardwareCapabilitiesExport&&) = delete;
 };
 
 }

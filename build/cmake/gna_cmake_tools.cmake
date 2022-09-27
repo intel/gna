@@ -1,5 +1,5 @@
-#@copyright (C) 2020-2021 Intel Corporation
-#SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright (C) 2019-2022 Intel Corporation
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 function (strip_symbols TARG_NAME)
   set(GNA_TARG_RELEASE_OUT_DIR ${GNA_TOOLS_RELEASE_OUT_DIR}/${TARG_NAME}/${CMAKE_ARCHITECTURE})

@@ -1,11 +1,13 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
-#include "common.h"
+#include <cstdint>
+
+#include "functional"
 
 namespace GNA
 {
@@ -26,9 +28,6 @@ public:
     {}
     Address(const T * value) :
         buffer(const_cast<T*>(value))
-    {}
-    Address(const Address& address) :
-        buffer(address.buffer)
     {}
     template<class C> Address(const Address<C*>& address) :
         buffer(const_cast<C*>(address.Get()))
@@ -53,7 +52,7 @@ public:
 
     bool operator ==(const std::nullptr_t &right) const
     {
-        return right == buffer;
+        return buffer == right;
     }
 
     explicit operator bool() const
@@ -163,11 +162,6 @@ public:
         this->buffer = this->Get() + right;
         return *this;
     }
-    const Address& operator =(const Address& right)
-    {
-        this->buffer = right.buffer;
-        return *this;
-    }
     ~Address() = default;
     Address(const Address&) = default;
     const Address& operator =(const T& right)
@@ -179,8 +173,5 @@ public:
 
 // Address Aliases
 using BaseAddress = Address<uint8_t * const>;
-
-// Functor for getting buffer offset for HW
-using GetHwOffset = std::function<uint32_t(const BaseAddress&)>;
 
 }
