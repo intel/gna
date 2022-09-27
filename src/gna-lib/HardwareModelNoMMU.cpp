@@ -146,7 +146,7 @@ void HardwareModelNoMMU::prepareAllocationsAndModel()
     hwCapabilities.ValidateOperationCount(model.LayerCount);
     auto const ldMemorySize = calculateDescriptorSize(false);
 
-    ldMemory = std::make_unique<Memory>(customAllocSafe(ldMemorySize), ldMemorySize);
+    ldMemory = allocLD(ldMemorySize);
 
     memset(ldMemory->GetBuffer(), 0, ldMemorySize);
 
@@ -284,4 +284,9 @@ Gna2MemoryTag HardwareModelNoMMU::GetComponentTag(Gna2DeviceVersion target, Gna2
     {
         throw GnaException(Gna2StatusDeviceVersionInvalid);
     }
+}
+
+std::unique_ptr<Memory> HardwareModelNoMMU::allocLD(uint32_t ldMemorySize, uint32_t ldSize)
+{
+    return std::make_unique<Memory>(customAllocSafe(ldMemorySize), ldMemorySize, ldSize);
 }

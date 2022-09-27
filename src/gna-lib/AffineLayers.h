@@ -24,6 +24,7 @@ public:
     virtual Tensor const & GetOperand(uint32_t operandIndex) const override;
 
     static void *GetGlobal2MBScratchpad();
+    static void RelaseGlobal2MBScrachpad();
 
 protected:
     AffineBaseLayer(
@@ -37,6 +38,9 @@ protected:
         auto biasMode = transform.Biases->Mode;
         dataConfig = DataConfig{ Input.Mode, weightMode, biasMode, Output.Mode, isActivationDisabled };
     }
+
+private:
+    static void* scratchPad;
 };
 
 class AffineLayer : public AffineBaseLayer

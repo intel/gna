@@ -34,7 +34,7 @@ public:
 
     void MapMemory(Memory& memoryObject) override;
 
-    void UnMapMemory(Memory & memoryObject) override;
+    bool UnMapMemory(Memory & memoryObject) override;
 
     uint32_t LoadModel(const ApiModel& model) override;
 

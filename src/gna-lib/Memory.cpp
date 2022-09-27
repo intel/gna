@@ -34,22 +34,22 @@ Memory::Memory(const uint32_t userSize, uint32_t alignment) :
 
 Memory::~Memory()
 {
+    if (mapped)
+    {
+        try
+        {
+            DeviceManager::Get().UnmapMemoryFromAllDevices(*this);
+        }
+        catch (...)
+        {
+            Log->Error("UnmapMemoryFromAllDevices failed.\n");
+        }
+        mapped = false;
+        id = 0;
+    }
+
     if (buffer != nullptr && allocationOwner)
     {
-        if (mapped)
-        {
-            try
-            {
-                DeviceManager::Get().UnmapMemoryFromAllDevices(*this);
-            }
-            catch (...)
-            {
-                Log->Error("UnmapMemoryFromAllDevices failed.\n");
-            }
-            mapped = false;
-            id = 0;
-        }
-
         _gna_free(buffer);
         buffer = nullptr;
         size = 0;
@@ -58,22 +58,25 @@ Memory::~Memory()
 
 void Memory::Map(DriverInterface& ddi)
 {
-    if (mapped || !allocationOwner)
+    if (!mapped)
     {
-        throw GnaException(Gna2StatusUnknownError);
+        id = ddi.MemoryMap(buffer, size);
+
+        mapped = true;
     }
-
-    id = ddi.MemoryMap(buffer, size);
-
-    mapped = true;
 }
-void Memory::Unmap(DriverInterface& ddi)
+
+bool Memory::Unmap(DriverInterface& ddi)
 {
+    bool unalloc = false;
+
     if (mapped)
     {
-        ddi.MemoryUnmap(id);
+        unalloc = ddi.MemoryUnmap(id);
         mapped = false;
     }
+
+    return unalloc;
 }
 
 uint64_t Memory::GetId() const

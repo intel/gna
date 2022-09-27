@@ -1,5 +1,5 @@
 /**
- @copyright Copyright (C) 2021 Intel Corporation
+ @copyright Copyright (C) 2021-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
 */
 
@@ -34,12 +34,13 @@ void HybridDevice::MapMemory(Memory & memoryObject)
     }
 }
 
-void HybridDevice::UnMapMemory(Memory & memoryObject)
+bool HybridDevice::UnMapMemory(Memory & memoryObject)
 {
     if (hardwareCapabilities->IsHardwareSupported())
     {
-        memoryObject.Unmap(*driverInterface);
+        return memoryObject.Unmap(*driverInterface);
     }
+    return false;
 }
 
 uint32_t HybridDevice::LoadModel(const ApiModel& model)

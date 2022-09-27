@@ -24,7 +24,6 @@ namespace GNA
 
 class HardwareModelScorable;
 class Layer;
-class Memory;
 class RequestConfiguration;
 struct LayerConfiguration;
 
@@ -32,27 +31,6 @@ enum GnaOperationMode : uint8_t
 {
     GMM = 0,
     xNN = 1
-};
-
-struct DriverPatch
-{
-    DriverPatch(uint32_t offset, uint32_t value, uint32_t size) :
-        Offset(offset), Value(value), Size(size)
-    {}
-
-    uint32_t Offset;
-    uint32_t Value;
-    uint32_t Size;
-};
-
-struct DriverBuffer
-{
-    explicit DriverBuffer(Memory const & memoryIn) :
-        Buffer(memoryIn)
-    {}
-
-    Memory const & Buffer;
-    std::vector<DriverPatch> Patches = {};
 };
 
 class HardwareRequest

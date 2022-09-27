@@ -21,10 +21,19 @@ GNA2_API enum Gna2Status Gna2MemoryAlloc(
     uint32_t * sizeGranted,
     void ** memoryAddress)
 {
+    return Gna2MemoryAllocForDevice(0, sizeRequested, sizeGranted, memoryAddress);
+}
+
+GNA2_API enum Gna2Status Gna2MemoryAllocForDevice(
+    uint32_t deviceIndex,
+    uint32_t sizeRequested,
+    uint32_t * sizeGranted,
+    void ** memoryAddress)
+{
     const std::function<ApiStatus()> command = [&]()
     {
         auto& deviceManager = DeviceManager::Get();
-        deviceManager.AllocateMemory(sizeRequested, sizeGranted, memoryAddress);
+        deviceManager.AllocateMemory(deviceIndex, sizeRequested, sizeGranted, memoryAddress);
         return Gna2StatusSuccess;
     };
     return ApiWrapper::ExecuteSafely(command);

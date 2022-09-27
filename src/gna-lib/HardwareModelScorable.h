@@ -60,6 +60,8 @@ protected:
     void prepareAllocationsAndModel() override;
 
     bool IsSoftwareLayer(uint32_t layerIndex) const override;
+
+    std::unique_ptr<Memory> allocLD(uint32_t ldMemorySize, uint32_t ldSize = Memory::GNA_BUFFER_ALIGNMENT) override;
 };
 
 }

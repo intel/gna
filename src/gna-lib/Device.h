@@ -75,9 +75,15 @@ public:
         UNREFERENCED_PARAMETER(memoryObject);
     }
 
-    virtual void UnMapMemory(Memory & memoryObject)
+    virtual bool UnMapMemory(Memory &memoryObject)
     {
         UNREFERENCED_PARAMETER(memoryObject);
+        return false;
+    }
+
+    DriverInterface* GetDriverInterface()
+    {
+        return driverInterface.get();
     }
 
 protected:

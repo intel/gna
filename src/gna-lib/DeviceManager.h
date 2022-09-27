@@ -56,7 +56,7 @@ public:
     Device& GetDeviceForModel(uint32_t modelId);
     Device* TryGetDeviceForModel(uint32_t modelId);
 
-    void AllocateMemory(uint32_t requestedSize, uint32_t * sizeGranted, void **memoryAddress);
+    void AllocateMemory(uint32_t deviceIndex, uint32_t requestedSize, uint32_t *sizeGranted, void **memoryAddress);
 
     template<typename ... T>
     Memory * CreateInternalMemory(T ... params)

@@ -90,7 +90,7 @@ public:
 
     virtual uint64_t MemoryMap(void *memory, uint32_t memorySize) override;
 
-    virtual void MemoryUnmap(uint64_t memoryId) override;
+    virtual bool MemoryUnmap(uint64_t memoryId) override;
 
     virtual RequestResult Submit(
         HardwareRequest& hardwareRequest, RequestProfiler& profiler) const override;

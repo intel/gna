@@ -36,10 +36,16 @@ public:
     // allocates and zeros memory
     Memory(const uint32_t userSize, uint32_t alignment = GNA_BUFFER_ALIGNMENT);
 
+    Memory(const Memory&) = delete;
+    Memory(Memory&&) = default;
+    Memory& operator=(const Memory&) = delete;
+    Memory& operator=(Memory&&) = delete;
+
     virtual ~Memory();
 
     void Map(DriverInterface& ddi);
-    void Unmap(DriverInterface& ddi);
+    // return 'true' if object has also been unallocated
+    bool Unmap(DriverInterface& ddi);
 
     uint64_t GetId() const;
 

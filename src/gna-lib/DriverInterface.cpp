@@ -8,6 +8,7 @@
 #include "Expect.h"
 #include "HardwareCapabilities.h"
 #include "LinuxDriverInterface.h"
+#include "Macros.h"
 #include "WindowsDriverInterface.h"
 
 using namespace GNA;
@@ -93,19 +94,25 @@ void DriverInterface::convertPerfResultUnit(DriverPerfResults& driverPerf,
     driverPerf.Completion = newProcessing + newRequestCompleted + newRequestCompletion;
 }
 
-void DriverInterface::convertPerfResultUnit(HardwarePerfResults& hardwarePerf,
-    const uint64_t frequency, const uint64_t multiplier)
+Memory DriverInterface::MemoryCreate(uint32_t size, uint32_t ldSize)
 {
-    if (0 == frequency || 0 == multiplier)
-    {
-        throw GnaException(Gna2StatusNullArgumentNotAllowed);
-    }
-    auto const newStall = RequestProfiler::ConvertElapsedTime(frequency, multiplier,
-        0, hardwarePerf.stall);
+    return Memory(size, ldSize);
+}
 
-    auto const newTotal = RequestProfiler::ConvertElapsedTime(frequency, multiplier,
-        0, hardwarePerf.total);
 
-    hardwarePerf.stall = newStall;
-    hardwarePerf.total = newTotal;
+void DriverInterface::convertPerfResultUnit(HardwarePerfResults& hardwarePerf,
+                                            const uint64_t frequency, const uint64_t multiplier)
+{
+  if (0 == frequency || 0 == multiplier)
+  {
+    throw GnaException(Gna2StatusNullArgumentNotAllowed);
+  }
+  auto const newStall = RequestProfiler::ConvertElapsedTime(frequency, multiplier,
+                                                            0, hardwarePerf.stall);
+
+  auto const newTotal = RequestProfiler::ConvertElapsedTime(frequency, multiplier,
+                                                            0, hardwarePerf.total);
+
+  hardwarePerf.stall = newStall;
+  hardwarePerf.total = newTotal;
 }

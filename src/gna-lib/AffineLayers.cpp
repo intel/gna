@@ -20,24 +20,31 @@
 
 using namespace GNA;
 
+void* AffineBaseLayer::scratchPad { nullptr };
+
 void *AffineBaseLayer::GetGlobal2MBScratchpad()
 {
-    static void* ptr = nullptr;
     uint32_t sizeGranted;
-    if (ptr == nullptr)
+    if (scratchPad == nullptr)
     {
-        auto status = Gna2MemoryAlloc(1 << 21, &sizeGranted, &ptr);
-        if (status != Gna2StatusSuccess || ptr == nullptr)
+        auto status = Gna2MemoryAlloc(1 << 21, &sizeGranted, &scratchPad);
+        if (status != Gna2StatusSuccess || scratchPad == nullptr)
         {
             Log->Error("Unsuccessful Scratchpad allocation\n");
         }
-        status = Gna2MemorySetTag(ptr, Gna2MemoryTagScratch);
+        status = Gna2MemorySetTag(scratchPad, Gna2MemoryTagScratch);
         if (status != Gna2StatusSuccess)
         {
             Log->Error("Unsuccessful Scratchpad tagging\n");
         }
     }
-    return ptr;
+    return scratchPad;
+}
+
+void AffineBaseLayer::RelaseGlobal2MBScrachpad()
+{
+    Gna2MemoryFree(scratchPad);
+    scratchPad = nullptr;
 }
 
 AffineBaseLayer::AffineBaseLayer(

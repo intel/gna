@@ -150,7 +150,8 @@ void HardwareModel::prepareAllocationsAndModel()
     auto ldMemorySize = calculateDescriptorSize(true);
     auto ldSize = LayerDescriptor::GetSize(1, hwCapabilities.GetDeviceVersion());
 
-    ldMemory = std::make_unique<Memory>(ldMemorySize, ldSize);
+    ldMemory = allocLD(ldMemorySize, ldSize);
+
     if (!ldMemory)
     {
         throw GnaException{ Gna2StatusResourceAllocationError };
@@ -195,6 +196,11 @@ bool HardwareModel::IsSoftwareLayer(uint32_t layerIndex) const
 {
     UNREFERENCED_PARAMETER(layerIndex);
     return false;
+}
+
+std::unique_ptr<Memory> HardwareModel::allocLD(uint32_t ldMemorySize, uint32_t ldSize)
+{
+    return std::make_unique<Memory>(ldMemorySize, ldSize);
 }
 
 HardwareModelTarget::HardwareModelTarget(CompiledModel const& softwareModel, const HardwareCapabilities& hwCaps) :

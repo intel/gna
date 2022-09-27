@@ -57,6 +57,8 @@ protected:
     void PrepareExportAllocations();
     void GuessIOAllocations();
 
+    std::unique_ptr<Memory> allocLD(uint32_t ldMemorySize, uint32_t ldSize = Memory::GNA_BUFFER_ALIGNMENT) override;
+
 private:
     void ExportLd(void *& exportData, uint32_t & exportDataSize);
     static const HardwareCapabilities& GetHwCaps(Gna2DeviceVersion targetDevice);

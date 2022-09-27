@@ -7,6 +7,7 @@
 
 #include "DeviceManager.h"
 
+#include "AffineLayers.h"
 #include "Expect.h"
 #include "GnaException.h"
 #include "Logger.h"
@@ -178,6 +179,7 @@ void DeviceManager::CloseDevice(uint32_t deviceIndex)
 
         if (deviceRefCount == 0)
         {
+            AffineBaseLayer::RelaseGlobal2MBScrachpad();
             UnMapAllMemoryObjectsFromDevice(GetDevice(deviceIndex));
             devices.erase(deviceIndex);
         }
@@ -203,19 +205,37 @@ Device* DeviceManager::TryGetDeviceForModel(uint32_t modelId)
     return nullptr;
 }
 
-void DeviceManager::AllocateMemory(uint32_t requestedSize,
-    uint32_t *sizeGranted, void **memoryAddress)
+void DeviceManager::AllocateMemory(uint32_t deviceIndex, uint32_t requestedSize,
+                                   uint32_t *sizeGranted, void **memoryAddress)
 {
     Expect::NotNull(sizeGranted);
     Expect::NotNull(memoryAddress);
 
     *sizeGranted = 0;
-    auto const memoryObject = CreateInternalMemory(requestedSize);
+
+    auto GetDev = [this](auto index) {
+        try {
+            return GetDevice(index).GetDriverInterface();
+        } catch (GnaException &e) {
+            if (Gna2StatusIdentifierInvalid == e.GetStatus())
+                // although present, no GNA HW is opened
+                return static_cast<decltype(GetDevice(index).GetDriverInterface())>(nullptr);
+            throw;
+        }
+    };
+
+    const auto deviceInterface = GetDev(deviceIndex);
+
+    const auto memoryObject = (deviceInterface == nullptr) ?
+        CreateInternalMemory(requestedSize) :
+        CreateInternalMemory(deviceInterface->MemoryCreate(requestedSize));
+
+    Expect::NotNull(memoryObject, Gna2StatusResourceAllocationError);
 
     MapMemoryToAll(*memoryObject);
 
     *memoryAddress = memoryObject->GetBuffer();
-    *sizeGranted = static_cast<uint32_t>(memoryObject->GetSize());
+    *sizeGranted = memoryObject->GetSize();
 }
 
 std::pair<bool, std::vector<std::unique_ptr<Memory>>::iterator> DeviceManager::FindMemory(void * buffer)
@@ -313,10 +333,10 @@ void DeviceManager::AssignProfilerConfigToRequestConfig(uint32_t instrumentation
 
 void DeviceManager::UnMapAllMemoryObjectsFromDevice(Device& device)
 {
-    for (auto& m : memoryObjects)
-    {
-        device.UnMapMemory(*m);
-    }
+    memoryObjects.erase(
+        std::remove_if(memoryObjects.begin(), memoryObjects.end(),
+                       [&](auto &memObj) { return device.UnMapMemory(*memObj); }),
+        memoryObjects.end());
 }
 
 void DeviceManager::MapAllToDevice(Device& device)

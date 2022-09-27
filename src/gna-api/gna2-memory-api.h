@@ -29,7 +29,20 @@
 #include <cstdint>
 
 /**
+ For Linux OS, following is in place:
+ 1. when score request is enqueued to given GNA HW, it's memory buffers must be bound to that GNA HW.
+ 2. buffer to GNA HW binding can be done in two ways:
+    1. (Implicitly) through Gna2MemoryAlloc(...) - first already opened GNA HW will be chosen (if any). For most cases GNA HW is opened prior any subsequent operation.
+    2. (Explicitly) through Gna2MemoryAllocForDevice(deviceIndex, ...) with deviceIndex pointing to that device - useful when more than one GNA HW is present in system.
+ 3. memory rebinding is impossible.
+ 4. when GNA HW is closed, all memory buffers bound to it are also implicitly closed.
+ */
+
+
+/**
  Allocates memory buffer, that can be used with GNA device.
+
+ see comment above
 
  @param sizeRequested Buffer size desired by the caller. Must be within range <1, 2^28>.
  @param [out] sizeGranted Buffer size granted by GNA,
@@ -40,6 +53,27 @@
     @retval Gna2StatusMemorySizeInvalid If sizeRequested is invalid.
  */
 GNA2_API enum Gna2Status Gna2MemoryAlloc(
+    uint32_t sizeRequested,
+    uint32_t * sizeGranted,
+    void ** memoryAddress);
+
+/**
+ Allocates memory buffer, that can be used with GNA device - device aware
+
+ see comment above
+
+ @param deviceIndex assures device is open prior allocation.
+ @param sizeRequested Buffer size desired by the caller. Must be within range <1, 2^28>.
+ @param [out] sizeGranted Buffer size granted by GNA,
+                          can be more then requested due to HW constraints.
+ @param [out] memoryAddress Address of memory buffer
+ @return Status of the operation.
+    @retval Gna2StatusSuccess On success.
+    @retval Gna2StatusMemorySizeInvalid If sizeRequested is invalid.
+
+ */
+GNA2_API enum Gna2Status Gna2MemoryAllocForDevice(
+    uint32_t deviceIndex,
     uint32_t sizeRequested,
     uint32_t * sizeGranted,
     void ** memoryAddress);

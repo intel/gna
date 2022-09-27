@@ -131,7 +131,7 @@ uint64_t WindowsDriverInterface::MemoryMap(void *memory, uint32_t memorySize)
     return memoryId;
 }
 
-void WindowsDriverInterface::MemoryUnmap(uint64_t memoryId)
+bool WindowsDriverInterface::MemoryUnmap(uint64_t memoryId)
 {
     auto bytesRead = DWORD{ 0 };
 
@@ -144,6 +144,8 @@ void WindowsDriverInterface::MemoryUnmap(uint64_t memoryId)
     const auto& memoryMapOverlapped = memoryMapRequests.at(memoryId);
     wait(*memoryMapOverlapped);
     memoryMapRequests.erase(memoryId);
+
+    return false;
 }
 
 void WindowsDriverInterface::QoSRequest(size_t size,

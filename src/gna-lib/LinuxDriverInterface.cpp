@@ -16,16 +16,19 @@
 #include "gna2-memory-impl.h"
 
 #include <cerrno>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
+#include <limits>
+#include <linux/limits.h>
 #include <memory>
 #include <stdexcept>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <vector>
+#include <xf86drm.h>
 
 using namespace GNA;
 
@@ -66,27 +69,28 @@ LinuxDriverInterface::~LinuxDriverInterface()
     }
 }
 
+
 uint64_t LinuxDriverInterface::MemoryMap(void *memory, uint32_t memorySize)
 {
-    union gna_memory_map memory_map;
+    UNREFERENCED_PARAMETER(memorySize);
 
-    memory_map.in.address = reinterpret_cast<uint64_t>(memory);
-    memory_map.in.size = memorySize;
+    // already mapped at memory creation time. Here only id is returned.
+    auto it = drmGemObjects.find(memory);
 
-    if(ioctl(gnaFileDescriptor, GNA_MAP_MEMORY, &memory_map) != 0)
-    {
-        throw GnaException {Gna2StatusDeviceOutgoingCommunicationError};
-    }
+    if (it == drmGemObjects.end())
+        throw GnaException { Gna2StatusIdentifierInvalid };
 
-    return memory_map.out.memory_id;
+    return it->second.handle;
 }
 
-void LinuxDriverInterface::MemoryUnmap(uint64_t memoryId)
+bool LinuxDriverInterface::MemoryUnmap(uint64_t memoryId)
 {
-    if(ioctl(gnaFileDescriptor, GNA_UNMAP_MEMORY, memoryId) != 0)
-    {
-        throw GnaException {Gna2StatusDeviceOutgoingCommunicationError};
-    }
+    Expect::InRange(memoryId,
+                    static_cast<uint64_t>(std::numeric_limits<decltype(gna_mem_id::handle)>::max()),
+                    Gna2StatusIdentifierInvalid);
+    gemFree(static_cast<decltype(gna_mem_id::handle)>(memoryId));
+
+    return true;
 }
 
 RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
@@ -96,6 +100,9 @@ RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
     int ret;
 
     createRequestDescriptor(hardwareRequest);
+
+    if (!buffersOriginFromDeviceValid(hardwareRequest.DriverMemoryObjects))
+        throw GnaException { Gna2StatusIdentifierInvalid };
 
     gna_compute computeArgs;
     computeArgs.in.config = *reinterpret_cast<struct gna_compute_cfg *>(hardwareRequest.CalculationData.get());
@@ -123,7 +130,7 @@ RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
     if (hardwareRequest.IsSwFallbackEnabled())
         computeArgs.in.config.flags |= static_cast<decltype(computeArgs.in.config.flags)>(GNA_FLAG_SCORE_QOS);
 
-    ret = ioctl(gnaFileDescriptor, GNA_COMPUTE, &computeArgs);
+    ret = ioctl(gnaFileDescriptor, DRM_IOCTL_GNA_COMPUTE, &computeArgs);
     if (ret == -1)
     {
         switch (errno)
@@ -143,7 +150,7 @@ RequestResult LinuxDriverInterface::Submit(HardwareRequest& hardwareRequest,
     wait_data.in.timeout = (driverCapabilities.recoveryTimeout + 1) * 1000;
 
     profiler.Measure(Gna2InstrumentationPointLibDeviceRequestSent);
-    ret = ioctl(gnaFileDescriptor, GNA_WAIT, &wait_data);
+    ret = ioctl(gnaFileDescriptor, DRM_IOCTL_GNA_WAIT, &wait_data);
     profiler.Measure(Gna2InstrumentationPointLibDeviceRequestCompleted);
     if(ret == 0)
     {
@@ -218,7 +225,7 @@ void LinuxDriverInterface::createRequestDescriptor(HardwareRequest& hardwareRequ
 
     for (const auto &driverBuffer : hardwareRequest.DriverMemoryObjects)
     {
-        buffer->memory_id = driverBuffer.Buffer.GetId();
+        buffer->handle = static_cast<uint32_t>(driverBuffer.Buffer.GetId());
         buffer->offset = 0;
         buffer->size = driverBuffer.Buffer.GetSize();
         buffer->patches_ptr = reinterpret_cast<uintptr_t>(patch);
@@ -270,9 +277,8 @@ int LinuxDriverInterface::discoverDevice(uint32_t deviceIndex, ParamsMap &out)
 
     for (uint8_t i = 0; i < MAX_GNA_DEVICES; i++)
     {
-        std::string name("/dev/intel_gna");
-        int devFd = open(name.append(std::to_string(i)).c_str(), O_RDWR);
-        if (-1 == devFd)
+        int devFd = gnaDevOpen(i);
+        if (devFd < 0)
             continue;
 
         bool paramsValid = true;
@@ -280,8 +286,9 @@ int LinuxDriverInterface::discoverDevice(uint32_t deviceIndex, ParamsMap &out)
         for (auto &it : params)
         {
             auto &value = it.second;
-            int error = ioctl(devFd, GNA_GET_PARAMETER, &value.first);
-            if (error < 0 && errno == EINVAL && value.second /*ZERO_ON_EINVAL*/) {
+            int error = ioctl(devFd, DRM_IOCTL_GNA_GET_PARAMETER, &value.first);
+            if (error < 0 && errno == EINVAL && value.second /*ZERO_ON_EINVAL*/)
+            {
                 value.first.out.value = 0;
                 error = 0;
             }
@@ -332,6 +339,104 @@ void LinuxDriverInterface::convertPerfResultUnit(DriverPerfResults & driverPerf,
     driverPerf.Processing = (proc - prepr + round) / divider;
     driverPerf.DeviceRequestCompleted = (devreq - prepr + round) / divider;
     driverPerf.Completion = (cmpl - prepr + round) / divider;
+}
+
+int LinuxDriverInterface::gnaDevOpen(int devNo)
+{
+    char buf[PATH_MAX];
+    drmVersionPtr version;
+    int fd;
+
+    static constexpr int DrmFirstRenderDev = DRM_NODE_RENDER * 64;
+    sprintf(buf, DRM_RENDER_DEV_NAME, DRM_DIR_NAME, DrmFirstRenderDev + devNo);
+
+    if ((fd = open(buf, O_RDWR | O_CLOEXEC, 0)) < 0)
+        return -1;
+
+    if ((version = drmGetVersion(fd)))
+    {
+        bool isGna = std::string("gna") == version->name;
+        drmFreeVersion(version);
+
+        if (!isGna)
+        {
+            close(fd);
+            return -1;
+        }
+    }
+    else
+    {
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+void* LinuxDriverInterface::gemAlloc(uint32_t &size)
+{
+    gna_gem_new createMemArgs { { size } };
+
+    int ret = ioctl(gnaFileDescriptor, DRM_IOCTL_GNA_GEM_NEW, &createMemArgs);
+
+    if (ret != 0)
+        return nullptr;
+
+    void* buffer =
+            mmap(0, createMemArgs.out.size_granted, PROT_READ|PROT_WRITE, MAP_SHARED,
+                 gnaFileDescriptor, createMemArgs.out.vma_fake_offset);
+
+    if (buffer == MAP_FAILED)
+    {
+        gna_gem_free freeMemArgs { createMemArgs.out.handle };
+
+        ioctl(gnaFileDescriptor, DRM_IOCTL_GNA_GEM_FREE, &freeMemArgs);
+        // we don't care about IOCTL's return code, can't do anything better though.
+
+        return nullptr;
+    }
+
+    drmGemObjects[buffer] = createMemArgs.out;
+    size = static_cast<uint32_t>(createMemArgs.out.size_granted);
+
+    return buffer;
+}
+
+Memory LinuxDriverInterface::MemoryCreate(uint32_t size, uint32_t ldSize)
+{
+    Expect::InRange(size, 1u, Memory::GNA_MAX_MEMORY_FOR_SINGLE_ALLOC, Gna2StatusMemorySizeInvalid);
+    auto gemObj = gemAlloc(size);
+    Expect::NotNull(gemObj, Gna2StatusResourceAllocationError);
+    return Memory(gemObj, size, ldSize);
+}
+
+void LinuxDriverInterface::gemFree(__u32 handle)
+{
+    auto it = std::find_if(drmGemObjects.begin(), drmGemObjects.end(), [handle] (auto &memObj) { return memObj.second.handle == handle; });
+
+    if (it == drmGemObjects.end())
+        throw GnaException { Gna2StatusMemoryBufferInvalid };
+
+    if (munmap(it->first, it->second.size_granted) != 0)
+        throw GnaException { Gna2StatusDeviceOutgoingCommunicationError };
+
+    gna_gem_free freeMemArgs { it->second.handle };
+
+    if (ioctl(gnaFileDescriptor, DRM_IOCTL_GNA_GEM_FREE, &freeMemArgs) != 0)
+    {
+        throw GnaException { Gna2StatusDeviceOutgoingCommunicationError };
+    }
+
+    drmGemObjects.erase(it);
+}
+
+bool LinuxDriverInterface::buffersOriginFromDeviceValid(std::vector<DriverBuffer> &driverMemoryObjects) const
+{
+    return std::all_of(driverMemoryObjects.begin(), driverMemoryObjects.end(),
+                       [=](auto &driverBuffer)
+                       {
+                           return drmGemObjects.find(driverBuffer.Buffer.Get()) != drmGemObjects.end();
+                       });
 }
 
 #endif // not defined WIN32

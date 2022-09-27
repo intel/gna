@@ -41,7 +41,8 @@ endif()
 project(${PROJECT_NAME})
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR ${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-  set(API_EXTRA_LIBS ${CMAKE_DL_LIBS})
+  find_library(DRM drm)
+  set(API_EXTRA_LIBS ${CMAKE_DL_LIBS} ${DRM})
   set(API_EXTRA_DEFS "")
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
   set(API_EXTRA_LIBS "Cfgmgr32.lib")
@@ -293,11 +294,12 @@ add_library(gna-api-static STATIC $<TARGET_OBJECTS:gna-obj>)
 set(GNA_ALL_TESTS_REGISTERED_TARGETS "gna-api;${GNA_ALL_TESTS_REGISTERED_TARGETS}" CACHE INTERNAL "")
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR ${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-  set(gna_lib_headers ${gna_lib_headers} ${COMMON_DIR}/gna.h)
+  set(gna_lib_headers ${gna_lib_headers} ${COMMON_DIR}/gna_drm.h)
+  set(DRM_INCLUDE_PATH /usr/include/drm)
 endif()
 
 target_include_directories(gna-obj PRIVATE
-  ${SRC_DIR} ${API_DIR} ${API_IMPL_DIR} ${KERNEL_DIR} ${GNA_HW_LIB_INCLUDE_PATH}
+  ${SRC_DIR} ${API_DIR} ${API_IMPL_DIR} ${KERNEL_DIR} ${GNA_HW_LIB_INCLUDE_PATH} ${DRM_INCLUDE_PATH}
   $<BUILD_INTERFACE:${COMMON_DIR}>)
 
 target_include_directories(gna-obj PUBLIC
@@ -349,7 +351,7 @@ target_compile_options(gna-obj
   $<$<CONFIG:${OS_PREFIX}_RELEASE>:${GNA_COMPILE_FLAGS_RELEASE}>)
 
 target_link_libraries(gna-api
-  PRIVATE ${CMAKE_THREAD_LIBS_INIT} ${API_EXTRA_LIBS} ${kernel_libraries} ${HW_MODULE_NAME})
+  PRIVATE ${CMAKE_THREAD_LIBS_INIT} ${API_EXTRA_LIBS} ${kernel_libraries} ${HW_MODULE_NAME} ${DRM})
 
 target_link_libraries(gna-api-static
   PRIVATE ${CMAKE_THREAD_LIBS_INIT} ${API_EXTRA_LIBS} ${kernel_libraries} ${HW_MODULE_NAME})

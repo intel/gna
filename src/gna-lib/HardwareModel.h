@@ -67,6 +67,8 @@ protected:
 
     void Build();
 
+    virtual std::unique_ptr<Memory> allocLD(uint32_t ldMemorySize, uint32_t ldSize = Memory::GNA_BUFFER_ALIGNMENT);
+
     std::unique_ptr<LayerDescriptor> baseDescriptor;
 
     CompiledModel const & model;

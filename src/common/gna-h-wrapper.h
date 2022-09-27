@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-#include "gna.h"
+#include "gna_drm.h"
 
 #if defined(__cplusplus)
 }

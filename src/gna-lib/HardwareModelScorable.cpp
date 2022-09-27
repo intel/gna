@@ -139,3 +139,8 @@ bool HardwareModelScorable::IsSoftwareLayer(uint32_t layerIndex) const
 {
     return SubModel::IsSoftwareLayer(layerIndex, subModels);
 }
+
+std::unique_ptr<Memory> HardwareModelScorable::allocLD(uint32_t ldMemorySize, uint32_t ldSize)
+{
+    return std::make_unique<Memory>(driverInterface.MemoryCreate(ldMemorySize, ldSize));
+}

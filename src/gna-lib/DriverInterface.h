@@ -5,6 +5,12 @@
 
 #pragma once
 
+#if !defined(_WIN32)
+// GNU/Linux / Android / ChromeOS
+#include <xf86drm.h>
+#endif // _WIN32
+
+#include "Memory.h"
 #include "Request.h"
 
 #include "gna2-common-impl.h"
@@ -12,7 +18,29 @@
 namespace GNA
 {
 
+class Memory;
 class HardwareRequest;
+
+struct DriverPatch
+{
+    DriverPatch(uint32_t offset, uint32_t value, uint32_t size) :
+            Offset(offset), Value(value), Size(size)
+    {}
+
+    uint32_t Offset;
+    uint32_t Value;
+    uint32_t Size;
+};
+
+struct DriverBuffer
+{
+    explicit DriverBuffer(Memory const & memoryIn) :
+            Buffer(memoryIn)
+    {}
+
+    Memory const & Buffer;
+    std::vector<DriverPatch> Patches = {};
+};
 
 struct HardwarePerfResults
 {
@@ -85,7 +113,13 @@ public:
     // unique_ptr is guaranteed to be not null
     static std::unique_ptr<DriverInterface> Create(uint32_t deviceIndex);
 
-    static constexpr uint8_t MAX_GNA_DEVICES = 16;
+    static constexpr uint8_t MAX_GNA_DEVICES =
+#if defined(_WIN32)
+            16
+#else // GNU/Linux / Android / ChromeOS
+            DRM_MAX_MINOR
+#endif // _WIN32
+            ;
 
     virtual bool OpenDevice(uint32_t deviceIndex) = 0;
 
@@ -93,9 +127,11 @@ public:
 
     const DriverCapabilities& GetCapabilities() const;
 
-    virtual uint64_t MemoryMap(void *memory, uint32_t memorySize) = 0;
+    virtual Memory MemoryCreate(uint32_t size, uint32_t ldSize = Memory::GNA_BUFFER_ALIGNMENT);
 
-    virtual void MemoryUnmap(uint64_t memoryId) = 0;
+    virtual uint64_t MemoryMap(void *memory, uint32_t memorySize) = 0;
+    // return 'true' when object has also been dealocated.
+    virtual bool MemoryUnmap(uint64_t memoryId) = 0;
 
     virtual RequestResult Submit(
         HardwareRequest& hardwareRequest, RequestProfiler & profiler) const = 0;
