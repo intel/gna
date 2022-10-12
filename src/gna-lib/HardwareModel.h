@@ -1,22 +1,18 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "Address.h"
 #include "HardwareLayer.h"
 #include "HwModuleInterface.hpp"
-#include "KernelArguments.h"
 #include "LayerDescriptor.h"
 #include "MemoryContainer.h"
-#include "SubModel.h"
-
-#include "gna-api.h"
+#include "Memory.h"
 
 #include <cstdint>
-#include <map>
 #include <memory>
 
 #include "gna2-common-impl.h"
@@ -33,13 +29,12 @@ class Layer;
 class HardwareModel
 {
 public:
-    HardwareModel(CompiledModel const & softwareModel, const HardwareCapabilities& hwCaps);
-
-    HardwareModel(const HardwareModel &) = delete;
-    HardwareModel& operator=(const HardwareModel&) = delete;
     virtual ~HardwareModel() = default;
 
-    void Build(const std::vector<std::unique_ptr<SubModel>>& submodels);
+    HardwareModel(const HardwareModel&) = delete;
+    HardwareModel(HardwareModel&&) = delete;
+    HardwareModel& operator=(const HardwareModel&) = delete;
+    HardwareModel& operator=(HardwareModel&&) = delete;
 
     HardwareLayer const & GetLayer(uint32_t layerIndex) const;
 
@@ -51,20 +46,28 @@ public:
      * b) layer descriptor memory is added first to MMU
      * c) other memory buffers are added to MMU in order they are provided
      */
-    virtual uint32_t GetBufferOffset(const BaseAddress& address) const;
+    virtual LdaOffset GetBufferOffset(const BaseAddress& address) const;
 
 protected:
+    HardwareModel(CompiledModel const & softwareModel, const HardwareCapabilities& hwCaps);
+
     uint32_t calculateDescriptorSize(bool includeGmms) const;
 
-    static uint32_t getLayerDescriptorsSize(const uint32_t layerCount,
+    static uint32_t getLayerDescriptorsSize(uint32_t layerCount,
         DeviceVersion deviceVersion = DefaultDeviceVersion);
-    static uint32_t getGmmDescriptorsSize(const uint32_t gmmLayersCount);
+    static uint32_t getGmmDescriptorsSize(uint32_t gmmLayersCount);
 
     virtual void prepareAllocationsAndModel();
 
     void prepareBaseDescriptor();
 
-    bool IsSoftwareLayer(const std::vector<std::unique_ptr<SubModel>>& submodels, uint32_t layerIndex);
+    void createScratchPadMemory(void * buffer, uint32_t size);
+
+    virtual bool IsSoftwareLayer(uint32_t layerIndex) const;
+
+    void Build();
+
+    virtual std::unique_ptr<Memory> allocLD(uint32_t ldMemorySize, uint32_t ldSize = Memory::GNA_BUFFER_ALIGNMENT);
 
     std::unique_ptr<LayerDescriptor> baseDescriptor;
 
@@ -80,12 +83,29 @@ protected:
 
     std::unique_ptr<Memory> ldMemory;
 
+    std::unique_ptr<Memory> scratchPadMemory;
+
     // hardware model (ldMemory) + software model allocations
     MemoryContainer allocations;
 
-    std::unique_ptr<HwModuleInterface const> const HwModule;
+    const HwModuleInterface HwModule;
 
     GetHwOffset getHwOffsetFunction;
 };
 
+// no export available, only for purpose of building target HW model for verification
+class HardwareModelTarget final : public HardwareModel
+{
+public:
+    HardwareModelTarget(CompiledModel const & softwareModel, const HardwareCapabilities& hwCaps);
+
+    HardwareModelTarget(const HardwareModelTarget&) = delete;
+    HardwareModelTarget(HardwareModelTarget&&) = delete;
+    HardwareModelTarget& operator=(const HardwareModelTarget&) = delete;
+    HardwareModelTarget& operator=(HardwareModelTarget&&) = delete;
+
+    virtual ~HardwareModelTarget() = default;
+};
+
 }
+

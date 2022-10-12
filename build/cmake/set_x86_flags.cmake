@@ -1,5 +1,5 @@
-#@copyright (C) 2020-2021 Intel Corporation
-#SPDX-License-Identifier: LGPL-2.1-or-later
+# Copyright (C) 2018-2021 Intel Corporation
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
   set(GNA_COMPILE_FLAGS "${GNA_COMPILE_FLAGS} /Qm32")

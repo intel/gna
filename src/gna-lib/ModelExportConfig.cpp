@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ModelExportConfig.h"
 
@@ -11,7 +11,6 @@
 #include "gna2-model-export-impl.h"
 #include "gna2-model-suecreek-header.h"
 
-#include <map>
 #include <cstdint>
 
 using namespace GNA;
@@ -19,10 +18,10 @@ using namespace GNA;
 ModelExportConfig::ModelExportConfig(Gna2UserAllocator userAllocatorIn) :
     userAllocator{ userAllocatorIn }
 {
-    Expect::NotNull((void *)userAllocator);
+    Expect::NotNull(userAllocator);
 }
 
-void ModelExportConfig::Export(Gna2ModelExportComponent componentType, void ** exportBuffer, uint32_t * exportBufferSize)
+void ModelExportConfig::Export(Gna2ModelExportComponent componentType, void ** exportBuffer, uint32_t * exportBufferSize) const
 {
     Expect::NotNull(exportBufferSize);
     Expect::NotNull(exportBuffer);
@@ -32,14 +31,16 @@ void ModelExportConfig::Export(Gna2ModelExportComponent componentType, void ** e
     *exportBuffer = nullptr;
     *exportBufferSize = 0;
     Gna2Status status;
-    auto& device = DeviceManager::Get().GetDevice(sourceDeviceId);
+    auto& device = DeviceManager::Get().GetDeviceForExport(sourceDeviceId);
+    auto const & model = device.GetModel(sourceModelId);
+    model.GetBufferConfigValidator().validate();
+
     if (componentType == Gna2ModelExportComponentLegacySueCreekHeader)
     {
         *exportBufferSize = sizeof(Gna2ModelSueCreekHeader);
         const auto header = static_cast<Gna2ModelSueCreekHeader *>(userAllocator(*exportBufferSize));
         *exportBuffer = header;
-        const auto dump = device.Dump(sourceModelId,
-            header, &status, privateAllocator);
+        const auto dump = Dump(model, header, &status, privateAllocator);
         privateDeAllocator(dump);
         return;
     }
@@ -47,14 +48,14 @@ void ModelExportConfig::Export(Gna2ModelExportComponent componentType, void ** e
     if (componentType == Gna2ModelExportComponentLegacySueCreekDump)
     {
         Gna2ModelSueCreekHeader header = {};
-        *exportBuffer = device.Dump(sourceModelId, &header, &status, userAllocator);
+        *exportBuffer = Dump(model, &header, &status, userAllocator);
         *exportBufferSize = header.ModelSize;
         return;
     }
 
-    if (componentType == Gna2ModelExportComponentLayerDescriptors)
+    if (targetDeviceVersion == Gna2DeviceVersionEmbedded3_1)
     {
-        device.DumpLdNoMMu(sourceModelId, userAllocator, *exportBuffer, *exportBufferSize);
+        DumpComponentNoMMu(model, userAllocator, *exportBuffer, *exportBufferSize, componentType, targetDeviceVersion);
         return;
     }
 
@@ -63,24 +64,29 @@ void ModelExportConfig::Export(Gna2ModelExportComponent componentType, void ** e
 
 void ModelExportConfig::SetSource(uint32_t deviceId, uint32_t modelId)
 {
+    auto& device = DeviceManager::Get().GetDeviceForExport(deviceId); // check is export device
+    Expect::True(device.HasModel(modelId), Gna2StatusIdentifierInvalid);
     sourceDeviceId = deviceId;
     sourceModelId = modelId;
+    targetDeviceVersion = device.GetVersion();
 }
 
-void ModelExportConfig::SetTarget(Gna2DeviceVersion version)
+void ModelExportConfig::SetTarget(Gna2DeviceVersion version) const
 {
-    targetDeviceVersion = version;
+    Expect::Equal(version, targetDeviceVersion, Gna2StatusDeviceVersionInvalid);
 }
 
 void ModelExportConfig::ValidateState() const
 {
-    Expect::NotNull((void *)userAllocator);
+    Expect::NotNull(userAllocator);
+
     Expect::True(sourceDeviceId != Gna2DisabledU32, Gna2StatusIdentifierInvalid);
     Expect::True(sourceModelId != Gna2DisabledU32, Gna2StatusIdentifierInvalid);
-    uint32_t const legacySueCreekVersionNumber = 0xFFFF0001;
-    auto const is1x0Embedded = Gna2DeviceVersionFromInt(0x10E) == targetDeviceVersion
+
+    auto const legacySueCreekVersionNumber = 0xFFFF0001u;
+    auto const is1x0Embedded = Gna2DeviceVersionEmbedded1_0 == targetDeviceVersion
     || legacySueCreekVersionNumber == static_cast<uint32_t>(targetDeviceVersion);
-    auto const is3x0Embedded = targetDeviceVersion == Gna2DeviceVersionFromInt(0x30E);
+    auto const is3x0Embedded = targetDeviceVersion == Gna2DeviceVersionEmbedded3_1;
     Expect::True(is1x0Embedded || is3x0Embedded, Gna2StatusAccelerationModeNotSupported);
 }
 

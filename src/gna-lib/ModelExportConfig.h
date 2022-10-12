@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -19,10 +19,10 @@ class ModelExportConfig
 public:
     explicit ModelExportConfig(Gna2UserAllocator userAllocatorIn);
     void SetSource(uint32_t deviceId, uint32_t modelId);
-    void SetTarget(Gna2DeviceVersion version);
+    void SetTarget(Gna2DeviceVersion version) const;
     void Export(enum Gna2ModelExportComponent componentType,
         void ** exportBuffer,
-        uint32_t * exportBufferSize);
+        uint32_t * exportBufferSize) const;
 
 protected:
     void ValidateState() const;

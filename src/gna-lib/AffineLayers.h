@@ -1,15 +1,13 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "ActivationFunction.h"
 #include "AffineFunctions.h"
 #include "Layer.h"
-
-#include "common.h"
 
 #include <memory>
 
@@ -26,32 +24,29 @@ public:
     virtual Tensor const & GetOperand(uint32_t operandIndex) const override;
 
     static void *GetGlobal2MBScratchpad();
+    static void RelaseGlobal2MBScrachpad();
 
 protected:
     AffineBaseLayer(
-            const nn_layer& layer, std::vector<TransformOperation> transforms,
-            const BaseValidator& validatorIn);
-
-    AffineBaseLayer(
             const Gna2Operation& operation, std::vector<TransformOperation> transforms,
-            const BaseValidator& validatorIn);
-
-    virtual DataConfig GetDataMode() const override;
+            const LayerValidator& validatorIn);
 
     template<typename TransformFunction>
-    DataConfig getDataMode(TransformFunction transform) const
+    void setDataMode(TransformFunction const & transform, bool isActivationDisabled)
     {
-        auto weightMode = transform->Weights->Mode.Value;
-        auto biasMode = transform->Biases->Mode.Value;
-        return DataConfig(Input.Mode, weightMode, biasMode, Output.Mode);
+        auto weightMode = transform.Weights->Mode;
+        auto biasMode = transform.Biases->Mode;
+        dataConfig = DataConfig{ Input.Mode, weightMode, biasMode, Output.Mode, isActivationDisabled };
     }
+
+private:
+    static void* scratchPad;
 };
 
 class AffineLayer : public AffineBaseLayer
 {
 public:
-    AffineLayer(const nn_layer& layer, const BaseValidator& validatorIn);
-    AffineLayer(const Gna2Operation& operation, const BaseValidator& validatorIn);
+    AffineLayer(const Gna2Operation& operation, const LayerValidator& validatorIn);
     virtual ~AffineLayer() = default;
 
     virtual void UpdateKernelConfigs(LayerConfiguration& layerConfiguration) const override;

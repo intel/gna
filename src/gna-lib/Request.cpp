@@ -1,14 +1,14 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "CompiledModel.h"
+#include "profiler.h"
 #include "Request.h"
 #include "RequestConfiguration.h"
 
 #include <algorithm>
-#include <cstring>
 #include <memory>
 
 struct KernelBuffers;
@@ -19,11 +19,12 @@ Request::Request(RequestConfiguration& config, std::unique_ptr<RequestProfiler> 
     Configuration(config),
     Profiler{std::move(profiler)}
 {
-    auto callback = [&](KernelBuffers *buffers, RequestProfiler *profilerPtr)
+    Expect::NotNull(Profiler);
+    auto callback = [&](KernelBuffers *buffers, RequestProfiler & profilerPtr)
     {
         return Configuration.Model.Score(Configuration, profilerPtr, buffers);
     };
-    scoreTask = std::packaged_task<Gna2Status(KernelBuffers *buffers, RequestProfiler *profiler)>(callback);
+    scoreTask = std::packaged_task<Gna2Status(KernelBuffers *buffers, RequestProfiler &profilerIn)>(callback);
     future = scoreTask.get_future();
 }
 

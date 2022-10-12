@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -39,11 +39,18 @@ struct ConvolutionalLayer2DCapabilities : LayerCapabilities
     /** CNN 2D maximum number of kernels */
     static constexpr uint32_t Filter2DCountMax = 8192;
 
+    /** CNN 2D maximum kernel depth */
+    static constexpr uint32_t Filter2DDepthMax = 2048;
+
     /** CNN minimum size of pooling window */
     static constexpr uint32_t PoolingWindowSizeMin = 1;
 
     /** CNN maximum size of pooling window */
     static constexpr uint32_t PoolingWindowSizeMax = 6;
+
+    /** CNN 1D maximum number of kernel elements in one dimension For int8_t */
+    static constexpr uint32_t Kernel1DElementsPerDimensionMax = 2048;
+
 };
 
 }

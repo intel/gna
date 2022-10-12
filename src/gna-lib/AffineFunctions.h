@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -48,16 +48,6 @@ protected:
         TransformOperation operation,
         std::unique_ptr<const WeightTensor> weights,
         std::unique_ptr<const BiasTensor> biases);
-
-    static const ShapeLimits outputDimensionsLimits;
-
-    static const DataModeLimits outputModeLimits_0_9;
-
-    static const TensorLimits outputLimits_0_9;
-
-    static const DataModeLimits outputModeLimits_3;
-
-    static const TensorLimits outputLimits_3;
 
 private:
     static const std::map<Gna2OperationType, kernel_op> kernelOperationMap;

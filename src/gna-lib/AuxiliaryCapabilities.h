@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -10,9 +10,10 @@
 namespace GNA
 {
 
-    struct AuxiliaryCapabilities : LayerCapabilities
-    {
-        static const FullCapabilitiesMap& GetOperands(uint32_t operandIndex);
-    };
+struct AuxiliaryCapabilities : LayerCapabilities
+{
+    static const FullCapabilitiesMap& GetOperands(uint32_t operandIndex);
+
+};
 
 }

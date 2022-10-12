@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -35,11 +35,6 @@ struct ConvolutionFunction2D : public Transform<ConvolutionConfig2D, Convolution
 
     virtual Tensor const & GetOperand(uint32_t operandIndex) const override;
 
-    virtual bool Is1D() const override
-    {
-        return is1D;
-    }
-
     std::unique_ptr<const BiasTensor> Biases;
 
     std::unique_ptr<const FiltersTensor> Filters;
@@ -67,8 +62,5 @@ protected:
     {
         setSoftwareScratchPad(config);
     }
-
-    bool is1D = false;
-
 };
 }

@@ -1,15 +1,14 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
+
 
 #pragma once
 
-#include "gna-api-types-xnn.h"
+#include "KernelArguments.h"
 
-#include "common.h"
-
-#include <stdint.h>
+#include <cstdint>
 
 template<typename TransformConfig>
 struct ExecutionKernelConfig;
@@ -85,11 +84,12 @@ struct PwlCachedConfig
         } Lookup;
         struct
         {
-            nn_pwl_seg* source;         // unpacked segments
+            PwlSegment* source;         // unpacked segments
             pwl_y_t*  ySeg;             // extracted PWL segments value data
             pwl_x_t xBase0;             // first segment xBase value (binary search algorithm)
             int16_t yBase0;             // first segment yBase value (binary search algorithm)
-            uint8_t _reserved[6];       // padding
+            uint8_t shift0;             // first segment slope_shift
+            uint8_t _reserved[5];       // padding
         } Binary;
     } Params;
 };
@@ -104,20 +104,16 @@ typedef void(*PwlApplyAll)(ExecutionKernelConfig<ActivationConfig> const * const
 // PWL cache and config (constant for given layer)
 struct PwlCached
 {
-public:
     bool useLookup = false;
-    void InitializeActivationFunctions_generic() const;
+
     void InitializeActivationFunctions_generic_sat() const;
-    void InitializeActivationFunctions_sse4() const;
     void InitializeActivationFunctions_sse4_sat() const;
-    void InitializeActivationFunctions_avx1() const;
     void InitializeActivationFunctions_avx1_sat() const;
-    void InitializeActivationFunctions_avx2() const;
     void InitializeActivationFunctions_avx2_sat() const;
 
     // Prepares PWL parameters and auxiliary buffers
-    PwlCached(const gna_data_mode mode, nn_pwl_seg const * const segmentsIn, uint32_t segmentCountIn);
-    PwlCached(PwlCached&& pwlCached);
+    PwlCached(uint32_t elementSize, PwlSegment const * const segmentsIn, uint32_t segmentCountIn);
+    PwlCached(PwlCached&& pwlCached) = delete;
     PwlCached(const PwlCached& pwlCached) = delete;
     ~PwlCached();
 
@@ -136,7 +132,6 @@ public:
     PwlCachedConfig pwl;
     mutable PwlApplySingle  ActivateSingle;              // algorithm used for PWL for single in-out
     mutable PwlApplyAll     ActivateAll;                 // algorithm used for PWL for all in-outs
-    uint32_t bytesPerOutput;
 
 private:
     void allocateLookupCaches();

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gna2-device-impl.h"
 
@@ -57,22 +57,42 @@ enum Gna2Status Gna2DeviceSetNumberOfThreads(
 enum Gna2Status Gna2DeviceOpen(
     uint32_t deviceIndex)
 {
-    const std::function<ApiStatus()> command = [&]()
+    try
     {
         DeviceManager::Get().OpenDevice(deviceIndex);
         return Gna2StatusSuccess;
-    };
-    return ApiWrapper::ExecuteSafely(command);
+    }
+    catch (...)
+    {
+        return ApiWrapper::HandleAndLogExceptions();
+    }
+}
+
+enum Gna2Status Gna2DeviceCreateForExport(
+    Gna2DeviceVersion targetDeviceVersion,
+    uint32_t * deviceIndex)
+{
+    try
+    {
+        DeviceManager::Get().CreateExportDevice(deviceIndex, targetDeviceVersion);
+        return Gna2StatusSuccess;
+    }
+    catch (...)
+    {
+        return ApiWrapper::HandleAndLogExceptions();
+    }
 }
 
 enum Gna2Status Gna2DeviceClose(
     uint32_t deviceIndex)
 {
-    const std::function<ApiStatus()> command = [&]()
+    try
     {
         DeviceManager::Get().CloseDevice(deviceIndex);
         return Gna2StatusSuccess;
-    };
-    return ApiWrapper::ExecuteSafely(command);
+    }
+    catch (...)
+    {
+        return ApiWrapper::HandleAndLogExceptions();
+    }
 }
-

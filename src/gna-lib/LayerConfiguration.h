@@ -1,10 +1,13 @@
+/**
+ @copyright Copyright (C) 2017-2022 Intel Corporation
+ SPDX-License-Identifier: LGPL-2.1-or-later
+*/
+
 #pragma once
 
 #include "ActiveList.h"
 #include "BufferMap.h"
 #include "KernelArguments.h"
-
-#include "common.h"
 
 #include <memory>
 

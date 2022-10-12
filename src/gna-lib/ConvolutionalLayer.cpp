@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ConvolutionalLayer.h"
 
@@ -16,8 +16,6 @@
 #include "Shape.h"
 #include "Tensor.h"
 
-#include "gna-api.h"
-#include "gna-api-types-xnn.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -25,16 +23,24 @@
 
 using namespace GNA;
 
+CnnLayer::CnnLayer(const Gna2Operation& apiLayer, const LayerValidator& validatorIn) :
+    Layer(apiLayer, validatorIn, {}, BaseAddress())
+{
+    ExpectValid();
+    Convolution = GetConvolution(getDetails(apiLayer));
+    Activation = ActivationFunction::Create({ &Output.ScratchPad, &Output, Output.Mode, Output.Buffer,
+        apiLayer, *validator });
+    Pooling = GetPooling(apiLayer);
+    Init();
+    dataConfig = DataConfig{ Input.Mode, Convolution->Filters->Mode,
+        Convolution->Biases->Mode, Output.Mode, Activation == nullptr };
+}
+
 void CnnLayer::ExpectValid() const
 {
     Expect::Equal(validator->Operation, INTEL_CONVOLUTIONAL, Gna2StatusXnnErrorLyrOperation);
     Expect::One(Input.Grouping, Gna2StatusXnnErrorGrouping);
     Expect::One(Output.Grouping, Gna2StatusXnnErrorGrouping);
-}
-
-std::unique_ptr<const PoolingFunction> CnnLayer::GetPooling(const nn_layer& layer) const
-{
-    return PoolingFunction::Create(layer.pLayerStruct, Convolution->Output, *validator, Input.Mode);
 }
 
 std::unique_ptr<const PoolingFunction> CnnLayer::GetPooling(const Gna2Operation& apiOperation) const
@@ -60,8 +66,7 @@ void CnnLayer::Init()
         effectiveComputeHidden = &CnnLayer::computeHiddenPwl;
         effectiveCompute = &CnnLayer::computePwl;
     }
-    const auto& declaredOutputPerFilter = Output.AsModelValue('W').SetOperand(OutputOperandIndex);
-    ModelErrorHelper::ExpectEqual(declaredOutputPerFilter, outputsPerFilter);
+    ModelErrorHelper::ExpectEqual(Output.at('W'), outputsPerFilter);
 
     Layer::ComputeHidden = [this, effectiveComputeHidden](AccelerationMode accel, ExecutionConfig const & executionConfig)
     {(this->*effectiveComputeHidden)(accel, executionConfig); };
@@ -72,6 +77,7 @@ void CnnLayer::Init()
 
 Tensor const & CnnLayer::GetOperand(uint32_t operandIndex) const
 {
+
     switch (operandIndex)
     {
     case ScratchpadOperandIndex:
@@ -111,7 +117,6 @@ void CnnLayer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) const
     if (layerConfiguration.Buffers.count(InputOperandIndex) > 0)
     {
         inputBuffer = layerConfiguration.Buffers[InputOperandIndex];
-        Input.ValidateBuffer(inputBuffer);
     }
 
     BaseAddress filterOutputBuffer = Activation ? Output.ScratchPad :
@@ -148,22 +153,10 @@ void CnnLayer::UpdateKernelConfigs(LayerConfiguration& layerConfiguration) const
         configs.Convolution = Convolution->GetRequestConfig(inputBuffer, pwlOutputBuffer);
     }
 }
-const char * enforcingOutputTensorLayout = "GNA1";
-std::unique_ptr<GNA::Layer> CnnLayer::CreateEnforced(const Gna2Operation& operation,
-    const BaseValidator& validatorIn)
-{
-    auto & outputTensor = *const_cast<Gna2Tensor*>(operation.Operands[OutputOperandIndex]);
-    const auto outputTensorCopy = outputTensor;
-    ModelWrapper::SetLayout(outputTensor, enforcingOutputTensorLayout);
-    auto enforcedLayer = std::make_unique<CnnLayer>(operation, validatorIn);
-    outputTensor = outputTensorCopy;
-    return enforcedLayer;
-}
 
 bool CnnLayer::IsForced(const Gna2Operation& operation)
 {
-    // For the 2.0 releases (matching GNA HW up to 2.0) CNN is always dispatched as Legacy CNN
-    return operation.Type == Gna2OperationTypeConvolution;
+    return strncmp(operation.Operands[OutputOperandIndex]->Layout, "GNA1", 4) == 0;
 }
 
 void CnnLayer::computeHidden(AccelerationMode accel, ExecutionConfig const & execution) const
@@ -202,25 +195,13 @@ void CnnLayer::computeHiddenPool(AccelerationMode accel, ExecutionConfig const &
 
     convConfig.pooledOutputs = Output.Buffer;
 
-    Pooling->Compute(&convConfig, accel, execution.Intermediate->pool, &Activation->Pwl);
+    Pooling->Compute(&convConfig, accel, execution.Intermediate->pool, Activation->Pwl.get());
 }
 
 void CnnLayer::computePool(const LayerConfiguration& layerConfiguration, AccelerationMode accel, ExecutionConfig const & execution) const
 {
     auto convConfig = ConvolutionConfig{ layerConfiguration.Configs.Convolution.get(), execution };
-    Pooling->Compute(&convConfig, accel, execution.Intermediate->pool, &Activation->Pwl);
-}
-
-DataConfig CnnLayer::GetDataMode() const
-{
-    return DataConfig(Input.Mode.Value, Convolution->Filters->Mode.Value,
-        Convolution->Biases->Mode.Value, Output.Mode.Value);
-}
-
-const nn_layer_conv & CnnLayer::getDetails(const nn_layer & cnn1DLayer)
-{
-    Expect::NotNull(cnn1DLayer.pLayerStruct);
-    return *reinterpret_cast<const nn_layer_conv*>(cnn1DLayer.pLayerStruct);
+    Pooling->Compute(&convConfig, accel, execution.Intermediate->pool, Activation->Pwl.get());
 }
 
 const Gna2Operation & CnnLayer::getDetails(const Gna2Operation & operation)

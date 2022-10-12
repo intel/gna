@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Weight.h"
 
@@ -12,55 +12,28 @@
 #include "ModelError.h"
 #include "Validator.h"
 
-#include "gna-api-types-xnn.h"
 
 using namespace GNA;
 
-const FullCapabilitiesMap WeightTensor::capabilities =
-{
-    {INTEL_AFFINE, {
-        AffineLayerCapabilities::GetOperands(FilterOperandIndex).at(INTEL_AFFINE)
-    }},
-    {INTEL_AFFINE_DIAGONAL, {
-        AffineLayerCapabilities::GetOperands(FilterOperandIndex).at(INTEL_AFFINE_DIAGONAL)
-    }},
-    {INTEL_AFFINE_MULTIBIAS, {
-        AffineLayerCapabilities::GetOperands(FilterOperandIndex).at(INTEL_AFFINE_MULTIBIAS)
-    }},
-    {INTEL_CONVOLUTIONAL, {
-        ConvolutionalLayer2DCapabilities::GetOperands(FilterOperandIndex).at(INTEL_CONVOLUTIONAL)
-    }},
-    {INTEL_CONVOLUTIONAL_2D, {
-        ConvolutionalLayer2DCapabilities::GetOperands(FilterOperandIndex).at(INTEL_CONVOLUTIONAL_2D)
-    }},
-    {INTEL_CONVOLUTIONAL_1D, {
-        ConvolutionalLayer2DCapabilities::GetOperands(FilterOperandIndex).at(INTEL_CONVOLUTIONAL_1D)
-    }},
-    {INTEL_GMM, {
-        GmmLayerCapabilities::GetOperands(WeightOperandIndex).at(INTEL_GMM)
-    }},
-    {INTEL_RECURRENT, {
-        AffineLayerCapabilities::GetOperands(WeightOperandIndex).at(INTEL_RECURRENT)
-    }},
-};
+const FullCapabilitiesMap WeightTensor::capabilities = LayerCapabilities::MakeFullCaps<WeightOperandIndex>();
 
 WeightTensor::WeightTensor(const Shape& dimensions, const DataMode& dataMode,
     void * buffer, const LayerValidator& validatorIn)
 try :
-    Tensor{ dimensions, dataMode, buffer, Validator{validatorIn, capabilities} }
+    Tensor{ dimensions, dataMode, buffer, Validator{validatorIn, capabilities}, WeightOperandIndex }
 {
 }
-catch (GnaException& e)
+catch (GnaException&)
 {
-    ModelErrorHelper::SetOperandIndexRethrow(e, WeightOperandIndex);
+    GnaModelErrorException::DispatchAndFill(WeightOperandIndex);
 }
 
 WeightTensor::WeightTensor(const Gna2Tensor &apiTensor, const LayerValidator& validatorIn)
 try :
-    Tensor(apiTensor, capabilities.GetOrder(validatorIn), Validator{ validatorIn, capabilities })
+    Tensor(apiTensor, capabilities.GetOrder(validatorIn), Validator{ validatorIn, capabilities }, WeightOperandIndex)
 {
 }
-catch (GnaException& e)
+catch (GnaException&)
 {
-    ModelErrorHelper::SetOperandIndexRethrow(e, WeightOperandIndex);
+    GnaModelErrorException::DispatchAndFill(WeightOperandIndex);
 }

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -18,7 +18,6 @@ struct ActiveList
 
     ActiveList(const uint32_t indicesCountIn, const uint32_t* indicesIn);
     ActiveList(const ActiveList& activeList) = default;
-    // needed for std vector's emplace_back (MoveInsertable concept)
     ActiveList(ActiveList &&) = default;
     ActiveList& operator=(const ActiveList&) = delete;
 

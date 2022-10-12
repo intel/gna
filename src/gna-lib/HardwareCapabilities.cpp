@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "HardwareCapabilities.h"
 
@@ -9,12 +9,9 @@
 #include "Expect.h"
 #include "GnaException.h"
 #include "Logger.h"
-#include "Macros.h"
 
-#include "gna-api-status.h"
+#include "gna2-capability-impl.h"
 
-#include <algorithm>
-#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -25,24 +22,23 @@ using namespace GNA;
 // - user data
 const uint32_t HardwareCapabilities::MaximumModelSize = 256 * 1024 * 1024;
 
-std::map<DeviceVersion, const GenerationCapabilities>& HardwareCapabilities::getCapsMap()
+template<Gna2DeviceVersion version>
+static GenerationCapabilities GetVerCaps();
+
+template<Gna2DeviceVersion baseVersion, Gna2DeviceGeneration targetGeneration>
+static GenerationCapabilities DeriveVerCaps()
 {
-    static std::map<DeviceVersion, const GenerationCapabilities> capsMap = {
-        { Gna2DeviceVersionGMM,
-            {GMM_DEVICE,
+    static GenerationCapabilities caps = GetVerCaps<baseVersion>();
+    caps.Generation = targetGeneration;
+    return caps;
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersionGMM>()
+{
+    return { Gna2DeviceGenerationGmm,
             1,
-            {
-                { BaseFunctionality, false},
-                { CNN, false },
-                { LegacyGMM, true },
-                { GMMLayer, false },
-                { MultiBias, false },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, false },
-                { CNN2D, false }
-            },
+            { LegacyGMM },
             6,
             {{1, 8}},
             4,
@@ -50,184 +46,130 @@ std::map<DeviceVersion, const GenerationCapabilities>& HardwareCapabilities::get
             0,
             {0, 0, 0, 0, 0, 0, 0, 0,
                 12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
-            {}},
-        },
-        { Gna2DeviceVersion0_9,
-            {GNA_0_9,
-            1023,
-            {
-                { BaseFunctionality, true},
-                { CNN, false },
-                { LegacyGMM, true },
-                { GMMLayer, false },
-                { MultiBias, false },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, false },
-                { CNN2D, false }
-            },
-            6,
-            {{2, 8}},
-            4,
-            1,
-            1,
-            {0, 0, 0, 0, 0, 0, 0, 0,
-                12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
-            {}},
-        },
-        { Gna2DeviceVersion1_0,
-            {GNA_1_0,
-            1023,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, false },
-                { MultiBias, false },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, false },
-                { CNN2D, false }
-            },
-            6,
-            {{2, 8}},
-            4,
-            1,
-            1,
-            {0, 0, 0, 0, 0, 0, 0, 0,
-                12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
-            {}},
-        },
-        { Gna2DeviceVersionEmbedded1_0,
-            {GNA_1_0,
-            1023,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, false },
-                { MultiBias, false },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, false },
-                { CNN2D, false }
-            },
-            3,
-            {{2, 8}},
-            4,
-            1,
-            1,
-            {0, 0, 0, 0, 0, 0, 0, 0,
-                6144, 6144, 6048, 6144, 5760, 6048, 6048, 6144},
-            {}},
-        },
-        { Gna2DeviceVersion2_0,
-            {GNA_2_0,
-            4096,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, true },
-                { MultiBias, true },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, true },
-                { CNN2D, false }
-            },
-            6,
-            {{2, 8}},
-            4,
-            1,
-            1,
-            {0, 0, 0, 0, 0, 0, 0, 0,
-                12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
-            {}},
-        },
-            { Gna2DeviceVersionFromInt(0x30),
-            {GNA_3_0,
-            8191,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, true },
-                { MultiBias, true },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, true },
-                { CNN2D, true }
-            },
-            8,
-            {{1, 16}, {2, 8}},
-            4,
-            2,
-            16,
             {},
-            {}},
-        },
-        { Gna2DeviceVersionFromInt(0x30E),
-            {GNA_3_0,
-            8191,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, true },
-                { MultiBias, true },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, true },
-                { CNN2D, true }
-            },
-            8,
-            {{1, 16}, {2, 8}},
-            4,
-            2,
-            16,
-            {},
-            {}},
-        },
-        { Gna2DeviceVersionFromInt(0x31E),
-            {GNA_3_0,
-            8191,
-            {
-                { BaseFunctionality, true},
-                { CNN, true },
-                { LegacyGMM, true },
-                { GMMLayer, true },
-                { MultiBias, true },
-                { L1Distance, false },
-                { L2Distance, false },
-                { ComputerVision, false },
-                { NewPerformanceCounters, true },
-                { CNN2D, true }
-            },
-            2,
-            {{1, 16}, {2, 8}},
-            4,
-            2,
-            16,
-            {},
-            {}},
-        },
+    };
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersion0_9>()
+{
+    return {
+    Gna2DeviceGeneration0_9,
+    1023,
+    { BaseFunctionality, LegacyGMM },
+    6,
+    {{2, 8}},
+    4,
+    1,
+    1,
+    {0, 0, 0, 0, 0, 0, 0, 0,
+    12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
+    {},
+    };
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersion1_0>()
+{
+    static auto caps = DeriveVerCaps<Gna2DeviceVersion0_9, Gna2DeviceGeneration1_0>();
+    caps.Features.insert(CNN);
+    return caps;
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersionEmbedded1_0>()
+{
+    static auto caps = DeriveVerCaps<Gna2DeviceVersion1_0, Gna2DeviceGeneration1_0>();
+    caps.ComputeEngineCount = 3;
+    caps.BufferElementCount =
+    { 0, 0, 0, 0, 0, 0, 0, 0,
+        6144, 6144, 6048, 6144, 5760, 6048, 6048, 6144 };
+    return caps;
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersion2_0>()
+{
+    return  { Gna2DeviceGeneration2_0,
+           4096,
+           {
+               BaseFunctionality, CNN, LegacyGMM, GMMLayer,
+               MultiBias, NewPerformanceCounters
+           },
+           6,
+           {{2, 8}},
+           4,
+           1,
+           1,
+           {0, 0, 0, 0, 0, 0, 0, 0,
+               12288, 12288, 12096, 12288, 12000, 12096, 12096, 12288},
+           {},
+            };
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersion3_0>()
+{
+    return { Gna2DeviceGeneration3_0,
+                8192,
+                {
+                     BaseFunctionality, CNN, LegacyGMM, GMMLayer,
+                     MultiBias, NewPerformanceCounters, CNN2D, CNN1D
+                },
+                8,
+                {{1, 16}, {2, 8}},
+                4,
+                2,
+                16,
+                {},
+                {},
+           };
+}
+
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersionEmbedded3_1>()
+{
+    return DeriveVerCaps<Gna2DeviceVersion3_0, Gna2DeviceGeneration3_1>();
+}
+
+// for relaxed limits
+// use DefaultDeviceVersion features as contains all known features to date
+// no embedded as it should be only used for present device software mode
+template<>
+GenerationCapabilities GetVerCaps<Gna2DeviceVersionSoftwareEmulation>()
+{
+    static auto caps = DeriveVerCaps<Gna2DeviceVersion3_0, DefaultDeviceGeneration>();
+    return caps;
+}
+
+template<Gna2DeviceVersion version>
+static DevVerGenMap::allocator_type::value_type GetCaps()
+{
+    return { version, GetVerCaps<version>() };
+}
+
+DevVerGenMap& HardwareCapabilities::getCapsMap()
+{
+    static DevVerGenMap capsMap = {
+         GetCaps<Gna2DeviceVersionGMM>(),
+         GetCaps<Gna2DeviceVersion0_9>(),
+         GetCaps<Gna2DeviceVersion1_0>(),
+         GetCaps<Gna2DeviceVersionEmbedded1_0>(),
+         GetCaps<Gna2DeviceVersion2_0>(),
+         GetCaps<Gna2DeviceVersion3_0>(),
+         GetCaps<Gna2DeviceVersionSoftwareEmulation>(),
+         GetCaps<Gna2DeviceVersionEmbedded3_1>(),
     };
 
     // initialize remaining items that depend on capsMap values
-    if (capsMap.at(Gna2DeviceVersionFromInt(0x30)).BufferElementCount[0] == 0)
+    if (capsMap.at(Gna2DeviceVersion3_0).BufferElementCount[0] == 0)
     {
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x30))));
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x30))), true);
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x30E))));
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x30E))), true);
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x31E))));
-        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionFromInt(0x31E))), true);
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersion3_0)));
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersion3_0)), true);
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionSoftwareEmulation)));
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionSoftwareEmulation)), true);
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionEmbedded3_1)));
+        initHardwareConsistencySettings3_0(const_cast<GenerationCapabilities&>(capsMap.at(Gna2DeviceVersionEmbedded3_1)), true);
     }
 
     return capsMap;
@@ -246,25 +188,15 @@ HardwareCapabilities::getGenerationCapabilities(DeviceVersion deviceVersionIn)
     }
 }
 
-bool HardwareCapabilities::Is3_0Generation(gna_device_generation generation)
+bool HardwareCapabilities::Is3_0Generation(Gna2DeviceGeneration generation)
 {
-    return GNA_3_0 == generation;
+    return Gna2DeviceGeneration3_0 == generation || Gna2DeviceGeneration3_1 == generation;
 }
 
 bool HardwareCapabilities::Is3_0Device(DeviceVersion deviceVersionIn)
 {
     auto const caps = getGenerationCapabilities(deviceVersionIn);
     return Is3_0Generation(caps.Generation);
-}
-
-DeviceVersion HardwareCapabilities::GetDeviceVersion(gna_device_generation generation)
-{
-    auto type = std::find_if(getCapsMap().cbegin(), getCapsMap().cend(),
-        [generation](const std::pair<const DeviceVersion, const GenerationCapabilities>& genCaps)
-    {
-        return genCaps.second.Generation == generation;
-    });
-    return type->first;
 }
 
 uint32_t HardwareCapabilities::GetMaximumLayerCount(DeviceVersion deviceVersionIn)
@@ -286,27 +218,8 @@ uint32_t HardwareCapabilities::GetBufferElementCount(
 
 HardwareCapabilities::HardwareCapabilities(
     DeviceVersion deviceVersionIn) :
-    deviceVersion{deviceVersionIn},
-    bufferSize{GetBufferSizeInKB()}
+    deviceVersion{deviceVersionIn}
 {
-}
-
-void HardwareCapabilities::DiscoverHardware(const DriverCapabilities& discoveredDriver)
-{
-    auto const hwInBuffSize = discoveredDriver.hwInBuffSize;
-    if (discoveredDriver.deviceVersion == Gna2DeviceVersionFromInt(0x30) ||
-        1 != getCapsMap().count(discoveredDriver.deviceVersion) ||
-        hwInBuffSize != GetBufferSizeInKB(discoveredDriver.deviceVersion))
-    {
-        Log->Message("No compatible hardware detected.\n");
-        return;
-    }
-
-    deviceVersion = discoveredDriver.deviceVersion;
-    bufferSize = hwInBuffSize;
-    driverRecoveryTimeout = discoveredDriver.recoveryTimeout;
-
-    hardwareSupported = true;
 }
 
 uint32_t const * HardwareCapabilities::GetHardwareConsistencySettings(
@@ -329,9 +242,14 @@ DeviceVersion HardwareCapabilities::GetDeviceVersion() const
     return deviceVersion;
 }
 
-gna_device_generation HardwareCapabilities::GetDeviceGeneration() const
+Gna2DeviceGeneration HardwareCapabilities::GetDeviceGeneration(DeviceVersion deviceVersionIn)
 {
-    return getGenerationCapabilities(deviceVersion).Generation;
+    return getGenerationCapabilities(deviceVersionIn).Generation;
+}
+
+Gna2DeviceGeneration HardwareCapabilities::GetDeviceGeneration() const
+{
+    return GetDeviceGeneration(deviceVersion);
 }
 
 bool HardwareCapabilities::Is3_0Generation() const
@@ -340,7 +258,7 @@ bool HardwareCapabilities::Is3_0Generation() const
     return Is3_0Generation(generation);
 }
 
-bool HardwareCapabilities::IsLayerSupported(nn_operation operation) const
+bool HardwareCapabilities::IsOperationSupported(nn_operation operation) const
 {
     static const std::map<nn_operation, GnaFeature> featureMap =
     {
@@ -354,6 +272,7 @@ bool HardwareCapabilities::IsLayerSupported(nn_operation operation) const
         {INTEL_CONVOLUTIONAL, CNN},
         {INTEL_GMM, GMMLayer},
         {INTEL_CONVOLUTIONAL_2D, CNN2D},
+        {INTEL_CONVOLUTIONAL_1D, CNN2D}, // mapped to 2D as INTEL_CONVOLUTIONAL_1D is only used to select limits here
     };
 
     return HasFeature(featureMap.at(operation));
@@ -362,7 +281,7 @@ bool HardwareCapabilities::IsLayerSupported(nn_operation operation) const
 bool HardwareCapabilities::HasFeature(GnaFeature feature) const
 {
     const auto& caps = getGenerationCapabilities(deviceVersion);
-    return caps.Features.at(feature);
+    return contains(caps.Features, feature);
 }
 
 uint32_t HardwareCapabilities::GetMaximumLayerCount() const
@@ -370,12 +289,23 @@ uint32_t HardwareCapabilities::GetMaximumLayerCount() const
     return GetMaximumLayerCount(deviceVersion);
 }
 
+void HardwareCapabilities::ValidateOperationCount(uint32_t operationCount) const
+{
+    ValidateOperationCount(operationCount, GetDeviceVersion());
+}
+
+void HardwareCapabilities::ValidateOperationCount(uint32_t operationCount, Gna2DeviceVersion version)
+{
+    ModelErrorHelper::ExpectGtZero(operationCount, Gna2ItemTypeModelNumberOfOperations);
+    ModelErrorHelper::ExpectBelowEq(operationCount, GetMaximumLayerCount(version), Gna2ItemTypeModelNumberOfOperations);
+}
+
 void HardwareCapabilities::initHardwareConsistencySettings3_0(GenerationCapabilities& caps, bool isWorkaround)
 {
-    auto& buffers = (isWorkaround) ? caps.BufferElementCount3_0Workaround : caps.BufferElementCount;
+    auto& buffers = isWorkaround ? caps.BufferElementCount3_0Workaround : caps.BufferElementCount;
     for (uint32_t p = 0; p < 2; p++)
     {
-        auto const inputPrecision = (isWorkaround) ? 2 : p + 1;
+        auto const inputPrecision = isWorkaround ? 2 : p + 1;
         for (uint32_t i = 0; i < BufferArraySizeSingle; i++)
         {
             buffers[p * BufferArraySizeSingle + i] =
@@ -401,7 +331,31 @@ uint32_t HardwareCapabilities::GetBufferSizeInKB(DeviceVersion deviceVersionIn)
     return caps.ComputeEngineCount * caps.BufferSizesPerCEInKB;
 }
 
-uint32_t HardwareCapabilities::GetBufferSizeInKB() const
+HardwareCapabilitiesDevice::HardwareCapabilitiesDevice(const DriverCapabilities& discoveredDevice) :
+    HardwareCapabilities{},
+    isHardwareSupported{ isHwValid(discoveredDevice) },
+    isSoftwareFallbackSupported{ isHardwareSupported && discoveredDevice.isSoftwareFallbackSupported }
 {
-    return GetBufferSizeInKB(deviceVersion);
+    if (isHardwareSupported)
+    {
+        deviceVersion = discoveredDevice.deviceVersion;
+    }
+    // else Gna2DeviceVersionSoftwareEmulation is used
+}
+
+bool HardwareCapabilitiesDevice::isHwValid(const DriverCapabilities& discoveredDevice)
+{
+    if (Gna2DeviceVersionSoftwareEmulation == discoveredDevice.deviceVersion ||
+        !contains(getCapsMap(), discoveredDevice.deviceVersion) ||
+        discoveredDevice.hwInBuffSize != GetBufferSizeInKB(discoveredDevice.deviceVersion))
+    {
+        Log->Message("No compatible hardware detected.\n");
+        return false;
+    }
+    return true;
+}
+
+HardwareCapabilitiesExport::HardwareCapabilitiesExport(DeviceVersion deviceVersionIn) :
+    HardwareCapabilities{deviceVersionIn}
+{
 }

@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-device-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -26,7 +26,7 @@
 
 #include "gna2-common-api.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 /**
  Gets number of available GNA devices on this computer.
@@ -72,7 +72,7 @@ GNA2_API enum Gna2Status Gna2DeviceGetVersion(
  with deviceIndex = 0.
 
  @note
- - The device with same index cab be opened multiple times (up to 1024) e.g. by different threads.
+ - The device with same index can be opened multiple times (up to 1024) e.g. by different threads.
  - The device has to be closed the same number of times it has been opened to prevent resource leakage.
 
  @param deviceIndex Index of the device to be opened.
@@ -84,8 +84,27 @@ GNA2_API enum Gna2Status Gna2DeviceOpen(
     uint32_t deviceIndex);
 
 /**
+ Creates and initializes GNA software device for model export and enabling.
+
+ @note
+  - No Hardware inference is available on this device.
+  - deviceIndex is assigned by GNA library and is unique number from range <Gna2DeviceGetCount(); uint32_t max>.
+  - The device has to be closed to prevent resource leakage.
+
+ @param targetDeviceVersion Desired version of the device to be opened.
+        Gna2DeviceVersionSoftwareEmulation is not supported.
+ @param [out] deviceIndex Index of the opened device.
+ @return Status of the operation.
+ @retval Gna2StatusDeviceVersionInvalid The provided target version is invalid.
+ @retval Gna2StatusNullArgumentNotAllowed deviceIndex is null.
+ */
+GNA2_API enum Gna2Status Gna2DeviceCreateForExport(
+    Gna2DeviceVersion targetDeviceVersion,
+    uint32_t * deviceIndex);
+
+/**
  Closes GNA device.
- 
+
  The device has to be closed the same number of times it has been opened to prevent resource leakage.
  When last handle to the device is closed releases the corresponding device resources.
 

@@ -1,17 +1,16 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
+#include "BufferConfigValidator.h"
 #include "LayerConfiguration.h"
-#include "HardwareLayer.h"
 #include "MemoryContainer.h"
 #include "ProfilerConfiguration.h"
 #include "Tensor.h"
 
-#include "gna-api.h"
 #include "gna2-common-impl.h"
 #include "gna2-inference-api.h"
 #include "gna2-inference-impl.h"
@@ -37,7 +36,7 @@ struct ActiveList;
 class RequestConfiguration
 {
 public:
-    RequestConfiguration(CompiledModel& model, uint32_t configId, DeviceVersion consistentDeviceIn);
+    RequestConfiguration(CompiledModel& model, uint32_t configId, const HardwareCapabilities & hardwareCapabilitiesIn);
 
     ~RequestConfiguration() = default;
 
@@ -45,20 +44,11 @@ public:
 
     void AddActiveList(uint32_t layerIndex, const ActiveList& activeList);
 
-    void SetHardwareConsistency(DeviceVersion consistentDeviceIn);
+    void EnforceAcceleration(Gna2AccelerationMode accelerationMode);
 
-    void EnforceAcceleration(Gna2AccelerationMode accelMode);
-
-    bool HasConsistencyMode() const
-    {
-        return Acceleration.GetHwConsistency();
-    }
     DeviceVersion GetConsistentDevice() const;
 
-    void AssignProfilerConfig(ProfilerConfiguration* config)
-    {
-        profilerConfiguration = config;
-    }
+    void AssignProfilerConfig(ProfilerConfiguration* config);
 
     ProfilerConfiguration* GetProfilerConfiguration() const
     {
@@ -72,12 +62,18 @@ public:
         return allocations;
     }
 
+    void UpdateConsistency(DeviceVersion consistentVersion);
+
+    void Validate() const
+    {
+        bufferConfigValidator.validate();
+    }
+
     CompiledModel & Model;
 
     const uint32_t Id;
 
     std::map<uint32_t, std::unique_ptr<LayerConfiguration>> LayerConfigurations;
-
 
     uint32_t ActiveListCount = 0;
 
@@ -90,7 +86,7 @@ public:
 private:
     struct AddBufferContext
     {
-        AddBufferContext(CompiledModel & model, uint32_t operandIndex, uint32_t layerIndex, void *address);
+        AddBufferContext(CompiledModel & model, uint32_t operandIndexIn, uint32_t layerIndexIn, void *addressIn);
 
         Layer const * SoftwareLayer;
         Tensor const * Operand;
@@ -110,11 +106,16 @@ private:
 
     LayerConfiguration & getLayerConfiguration(uint32_t layerIndex);
 
+    void updateMissingBufferForSingleLayer(AddBufferContext & context);
+
     ProfilerConfiguration* profilerConfiguration = nullptr;
 
-    DeviceVersion consistentDevice;
-
     MemoryContainer allocations;
+
+    const HardwareCapabilities & hardwareCapabilities;
+
+    // Per request copy of config from software model
+    BufferConfigValidator bufferConfigValidator;
 };
 
 }

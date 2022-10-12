@@ -1,14 +1,14 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
-#include <limits.h>
-#include <stdlib.h>
-#include <stdint.h>
+#include <climits>
+#include <cstdlib>
+#include <cstdint>
 
 #if defined(_WIN32)
-#include <Windows.h>
+#include <windows.h>
 #endif
 
 #include "profiler.h"

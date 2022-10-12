@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -20,7 +20,7 @@ class Request;
 
 class ThreadPool {
 public:
-    explicit ThreadPool(uint32_t threadCount);
+    explicit ThreadPool();
     ~ThreadPool();
     ThreadPool(const ThreadPool &) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;

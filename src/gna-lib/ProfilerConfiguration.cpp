@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ProfilerConfiguration.h"
 
@@ -103,6 +103,7 @@ void ProfilerConfiguration::ExpectValid(Gna2InstrumentationMode encodingIn)
 
 void ProfilerConfiguration::SetHwPerfEncoding(Gna2InstrumentationMode encodingIn)
 {
+    ExpectValid(encodingIn);
     HwPerfEncoding = encodingIn;
 }
 
@@ -115,4 +116,32 @@ uint8_t ProfilerConfiguration::GetHwPerfEncoding() const
 void ProfilerConfiguration::SetResult(uint32_t const index, uint64_t const value) const
 {
     Results[index] = value;
+}
+
+uint32_t ProfilerConfigurationManager::CreateConfiguration(
+    std::vector<Gna2InstrumentationPoint>&& selectedInstrumentationPoints,
+    uint64_t* results)
+{
+    auto const profilerConfigId = configIdSequence++;
+    configurations.emplace(profilerConfigId,
+        std::make_unique<ProfilerConfiguration>(profilerConfigId, std::move(selectedInstrumentationPoints), results));
+    return profilerConfigId;
+}
+
+ProfilerConfiguration& ProfilerConfigurationManager::GetConfiguration(uint32_t configId)
+{
+    try
+    {
+        auto& config = configurations.at(configId);
+        return *config;
+    }
+    catch (const std::out_of_range&)
+    {
+        throw GnaException(Gna2StatusIdentifierInvalid);
+    }
+}
+
+void ProfilerConfigurationManager::ReleaseConfiguration(uint32_t configId)
+{
+    configurations.erase(configId);
 }

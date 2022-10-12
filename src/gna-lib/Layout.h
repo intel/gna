@@ -1,13 +1,12 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
-#include "gna-api.h"
 #include "gna2-model-api.h"
-#include "ParameterLimits.h"
+#include "gna2-model-impl.h"
 
 #include <map>
 #include <string>

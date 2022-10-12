@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Layout.h"
 
@@ -18,29 +18,33 @@ using namespace GNA;
 
 constexpr const char LAYOUT_ANY[] = "NWHDXYZ";
 
-const std::map<const std::string, gna_tensor_order> Layout::orderStrings
+static const auto& GetOrderStrings()
 {
-    { "", GNA_TENSOR_SCALAR },
-    { "N", GNA_TENSOR_N },
-    { "W", GNA_TENSOR_W },
-    { "H", GNA_TENSOR_H },
-    { "NW", GNA_TENSOR_NW },
-    { "NH", GNA_TENSOR_NH },
-    { "WN", GNA_TENSOR_WN },
-    { "WH", GNA_TENSOR_WH },
-    { "HN", GNA_TENSOR_HN },
-    { "HD", GNA_TENSOR_HD },
-    { "HW", GNA_TENSOR_HW },
-    { "HWD", GNA_TENSOR_HWD },
-    { "NWD", GNA_TENSOR_NWD },
-    { "HDW", GNA_TENSOR_HDW },
-    { "NWH", GNA_TENSOR_NWH },
-    { "NHW", GNA_TENSOR_NHW },
-    { "WHD", GNA_TENSOR_WHD },
-    { "NHWD", GNA_TENSOR_NHWD },
-    { "NDHW", GNA_TENSOR_NDHW },
-    { LAYOUT_ANY, GNA_TENSOR_ORDER_ANY },
-};
+    static const auto orderString = std::map<const std::string, gna_tensor_order>
+    {
+        { "", GNA_TENSOR_SCALAR },
+        { "N", GNA_TENSOR_N },
+        { "W", GNA_TENSOR_W },
+        { "H", GNA_TENSOR_H },
+        { "NW", GNA_TENSOR_NW },
+        { "NH", GNA_TENSOR_NH },
+        { "WN", GNA_TENSOR_WN },
+        { "WH", GNA_TENSOR_WH },
+        { "HN", GNA_TENSOR_HN },
+        { "HD", GNA_TENSOR_HD },
+        { "HW", GNA_TENSOR_HW },
+        { "HWD", GNA_TENSOR_HWD },
+        { "NWD", GNA_TENSOR_NWD },
+        { "HDW", GNA_TENSOR_HDW },
+        { "NWH", GNA_TENSOR_NWH },
+        { "NHW", GNA_TENSOR_NHW },
+        { "WHD", GNA_TENSOR_WHD },
+        { "NHWD", GNA_TENSOR_NHWD },
+        { "NDHW", GNA_TENSOR_NDHW },
+        { LAYOUT_ANY, GNA_TENSOR_ORDER_ANY },
+    };
+    return orderString;
+}
 
 Layout::Layout() :
     Layout{ LAYOUT_ANY }
@@ -49,24 +53,24 @@ Layout::Layout() :
 Layout::Layout(char const * layoutIn) :
     std::string{ layoutIn }
 {
-    auto const found = orderStrings.find(*this);
-    if (orderStrings.end() == found)
+    auto const found = GetOrderStrings().find(*this);
+    if (GetOrderStrings().end() == found)
     {
         throw GnaException(Gna2StatusXnnErrorLyrInvalidTensorOrder);
     }
 }
 
 Layout::Layout(gna_tensor_order order) :
-    Layout{ GetOrderString(order) }
+    std::string{ GetOrderString(order) }
 {}
 
 char const * Layout::GetOrderString(gna_tensor_order order)
 {
     const auto orderString = std::find_if(
-          orderStrings.begin(),
-          orderStrings.end(),
+          GetOrderStrings().begin(),
+          GetOrderStrings().end(),
           [order](const auto& iter) {return iter.second == order; });
-    if (orderString != orderStrings.end())
+    if (orderString != GetOrderStrings().end())
     {
         return orderString->first.c_str();
     }
@@ -77,7 +81,7 @@ Layout::operator gna_tensor_order() const
 {
     try
     {
-        return orderStrings.at(*this);
+        return GetOrderStrings().at(*this);
     }
     catch (const std::out_of_range&)
     {

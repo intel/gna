@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "LayerInput.h"
 
@@ -18,10 +18,6 @@
 #include "ParameterLimits.h"
 #include "Validator.h"
 
-#include "gna-api-status.h"
-#include "gna-api-types-gmm.h"
-#include "gna-api.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <memory.h>
@@ -30,59 +26,16 @@
 
 using namespace GNA;
 
-const FullCapabilitiesMap LayerInput::capabilities =
-{
-    {INTEL_AFFINE, {
-        AffineLayerCapabilities::GetOperands(InputOperandIndex).at(INTEL_AFFINE)
-    }},
-    {INTEL_AFFINE_DIAGONAL, {
-        AffineLayerCapabilities::GetOperands(InputOperandIndex).at(INTEL_AFFINE_DIAGONAL)
-    }},
-    {INTEL_AFFINE_MULTIBIAS, {
-        AffineLayerCapabilities::GetOperands(InputOperandIndex).at(INTEL_AFFINE_MULTIBIAS)
-    }},
-    {INTEL_CONVOLUTIONAL, {
-        ConvolutionalLayer2DCapabilities::GetOperands(InputOperandIndex).at(INTEL_CONVOLUTIONAL)
-    }},
-    {INTEL_CONVOLUTIONAL_2D, {
-        ConvolutionalLayer2DCapabilities::GetOperands(InputOperandIndex).at(INTEL_CONVOLUTIONAL_2D)
-    }},
-    {INTEL_CONVOLUTIONAL_1D, {
-        ConvolutionalLayer2DCapabilities::GetOperands(InputOperandIndex).at(INTEL_CONVOLUTIONAL_1D)
-    }},
-    {INTEL_COPY, {
-        AuxiliaryCapabilities::GetOperands(InputOperandIndex).at(INTEL_COPY)
-    }},
-    {INTEL_INTERLEAVE, {
-        AuxiliaryCapabilities::GetOperands(InputOperandIndex).at(INTEL_INTERLEAVE)
-    }},
-    {INTEL_DEINTERLEAVE, {
-        AuxiliaryCapabilities::GetOperands(InputOperandIndex).at(INTEL_DEINTERLEAVE)
-    }},
-    {INTEL_GMM, {
-        GmmLayerCapabilities::GetOperands(InputOperandIndex).at(INTEL_GMM)
-    }},
-    {INTEL_RECURRENT, {
-        AffineLayerCapabilities::GetOperands(InputOperandIndex).at(INTEL_RECURRENT)
-    }}
-};
+const FullCapabilitiesMap LayerInput::capabilities = LayerCapabilities::MakeFullCaps<InputOperandIndex>();
 
-LayerInput::LayerInput(const nn_layer &layer, const LayerValidator& validatorIn) :
-    Tensor{ GetDimensions(layer, capabilities.GetOrder(validatorIn)),
-        layer.nBytesPerInput, layer.pInputs,
-        Validator{ validatorIn, capabilities } },
-    Grouping{ getGrouping(layer) },
-    ElementCount{ getElementCount(layer) }
-{
-}
-
-ApiShape GetShape(const Gna2Operation & operation)
+ApiShape LayerInput::GetShape(const Gna2Operation & operation)
 {
     ApiShape shape{ operation.Operands[InputOperandIndex]->Shape };
     if (Gna2OperationTypeConvolution == operation.Type &&
         shape.NumberOfDimensions < 4 &&
         !CnnLayer::IsForced(operation))
     {
+        ModelErrorHelper::ExpectEqual(shape.NumberOfDimensions, 2, Gna2ItemTypeShapeNumberOfDimensions);
         shape.Dimensions[2] = shape.Dimensions[1];
         shape.Dimensions[1] = 1;
         shape.Dimensions[3] = 1;
@@ -95,59 +48,30 @@ LayerInput::LayerInput(const Gna2Operation& operation, const LayerValidator& val
 try :
     Tensor{ Shape::Create(GetShape(operation), capabilities.GetOrder(validatorIn)),
        GetDataMode(*operation.Operands[InputOperandIndex]), operation.Operands[InputOperandIndex]->Data,
-       Validator{ validatorIn, capabilities } },
+       Validator{ validatorIn, capabilities, true }, InputOperandIndex },
     Grouping{ getGrouping(operation, validatorIn) },
     ElementCount{ getElementCount(operation, validatorIn) }
 {
 }
-catch (GnaException& e)
+catch (GnaException&)
 {
-    ModelErrorHelper::SetOperandIndexRethrow(e, InputOperandIndex);
+    GnaModelErrorException::DispatchAndFill(InputOperandIndex);
 }
 
 bool LayerInput::IsInputInterleave(const Gna2Tensor &apiTensor,
     const BaseValidator& validatorIn)
 {
-    auto layerValidator = LayerValidator{ validatorIn, INTEL_INTERLEAVE };
+    auto const layerValidator = LayerValidator{ validatorIn, INTEL_INTERLEAVE };
     try
     {
         Tensor{
            apiTensor, capabilities.GetOrder(layerValidator),
-           Validator{ layerValidator, capabilities } };
+           Validator{ layerValidator, capabilities, true } };
         return true;
     }
     catch (const GnaException&)
     {
         return false;
-    }
-}
-
-Shape LayerInput::GetDimensions(const nn_layer& layer, gna_tensor_order order)
-{
-    switch (layer.operation)
-    {
-    case INTEL_AFFINE:
-    case INTEL_AFFINE_MULTIBIAS:
-    case INTEL_AFFINE_DIAGONAL:
-    case INTEL_COPY:
-    case INTEL_DEINTERLEAVE:
-    case INTEL_INTERLEAVE:
-    case INTEL_RECURRENT:
-    case INTEL_CONVOLUTIONAL:
-        return { order, layer.nInputRows, layer.nInputColumns };
-    case INTEL_GMM:
-        return { order, layer.nInputColumns, layer.nInputRows };
-    case INTEL_CONVOLUTIONAL_2D:
-    {
-        auto const config = static_cast<nn_layer_cnn2d*>(layer.pLayerStruct);
-        return { order,
-            layer.nInputRows,
-            config->inputDimensions.height,
-            config->inputDimensions.width,
-            config->inputDimensions.depth }; // GNA_TENSOR_NHWD
-    }
-    default:
-        return {};
     }
 }
 
@@ -173,23 +97,3 @@ std::pair<uint32_t, uint32_t> LayerInput::getGroupingAndElements(
     }
 }
 
-std::pair<uint32_t, uint32_t> LayerInput::getGroupingAndElements(const nn_layer& layer) const
-{
-    switch (layer.operation)
-    {
-    case INTEL_AFFINE:
-    case INTEL_AFFINE_DIAGONAL:
-    case INTEL_AFFINE_MULTIBIAS:
-    case INTEL_DEINTERLEAVE:
-        return { layer.nInputColumns, layer.nInputRows };
-    case INTEL_GMM:
-    case INTEL_COPY:
-    case INTEL_RECURRENT:
-    case INTEL_INTERLEAVE:
-    case INTEL_CONVOLUTIONAL:
-    case INTEL_CONVOLUTIONAL_2D:
-        return { layer.nInputRows, layer.nInputColumns };
-    default:
-        throw GnaException(Gna2StatusNotImplemented);
-    }
-}

@@ -1,15 +1,14 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!--
-/**
- @copyright (C) 2017-2021 Intel Corporation
+ Copyright (C) 2012-2021 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
 -->
+
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <PRODUCT_NAME>Intel&#174; GNA</PRODUCT_NAME>
         <PRODUCT_NAME_LONG>Intel&#174; Gaussian &amp; Neural Accelerator</PRODUCT_NAME_LONG>
-        <PRODUCT_COPYRIGHT>Copyright&#169; 2015-2020, Intel Corporation</PRODUCT_COPYRIGHT>
+        <PRODUCT_COPYRIGHT>Copyright&#169; 2015-2021, Intel Corporation</PRODUCT_COPYRIGHT>
     </PropertyGroup>
     <PropertyGroup>
         <IS_VER_SET Condition="'$(GMM_VER_RELEASE)'!='' and '$(GMM_VER_HW)'!='' and '$(GMM_VER_FIX)'!='' and '$(GMM_VER_BUILD)'!=''">true</IS_VER_SET>
@@ -18,48 +17,15 @@
         <VERSION_QB_ID Condition="$(IS_VER_SET) == true">$(GMM_VER_HW),$(GMM_VER_RELEASE),$(GMM_VER_FIX),$(GMM_VER_BUILD)</VERSION_QB_ID>
         <VERSION_QB_ID Condition="$(IS_VER_SET) != true">3,0,0,0</VERSION_QB_ID>
     </PropertyGroup>
-    <PropertyGroup>
-        <TARGET_ICC_17_ID>17</TARGET_ICC_17_ID>
-        <TARGET_ICC_18_ID>18</TARGET_ICC_18_ID>
-        <TARGET_ICC_19_ID>19</TARGET_ICC_19_ID>
-        <TARGET_VS140_ID>140</TARGET_VS140_ID>
-        <TARGET_VS141_ID>141</TARGET_VS141_ID>
-        <TARGET_TOOLSET_ID>0</TARGET_TOOLSET_ID>
-        <TARGET_TOOLSET_ID Condition="('$(PlatformToolset)'== 'Intel C++ Compiler 17.0')">$(TARGET_ICC_17_ID)</TARGET_TOOLSET_ID>
-        <TARGET_TOOLSET_ID Condition="('$(PlatformToolset)'== 'Intel C++ Compiler 18.0')">$(TARGET_ICC_18_ID)</TARGET_TOOLSET_ID>
-        <TARGET_TOOLSET_ID Condition="('$(PlatformToolset)'== 'Intel C++ Compiler 19.0')">$(TARGET_ICC_19_ID)</TARGET_TOOLSET_ID>
-        <TARGET_TOOLSET_ID Condition="('$(PlatformToolset)'== 'v140')">$(TARGET_VS140_ID)</TARGET_TOOLSET_ID>
-        <TARGET_TOOLSET_ID Condition="('$(PlatformToolset)'== 'v141')">$(TARGET_VS141_ID)</TARGET_TOOLSET_ID>
-    </PropertyGroup>
-    <PropertyGroup>
-        <TARGET_DEBUG_ID>1</TARGET_DEBUG_ID><!-- Debug configuration numeric version id -->
-        <TARGET_RELEASE_ID>2</TARGET_RELEASE_ID><!-- Release configuration numeric version id -->
-        <CONFIG_TYPE>0</CONFIG_TYPE>
-        <CONFIG_TYPE Condition="('$(Configuration)' == 'WIN_DEBUG')">$(TARGET_DEBUG_ID)</CONFIG_TYPE>
-        <CONFIG_TYPE Condition="('$(Configuration)' == 'WIN_RELEASE')">$(TARGET_RELEASE_ID)</CONFIG_TYPE>
-    </PropertyGroup>
-    <PropertyGroup>
-        <TARGET_X64_ID>64</TARGET_X64_ID><!-- amd64/Win64 platform numeric version id -->
-        <TARGET_X86_ID>86</TARGET_X86_ID><!-- ia86/Win32 platform numeric version id -->
-        <PLATFORM_ID>$(TARGET_X64_ID)</PLATFORM_ID>
-        <PLATFORM_ID Condition="'$(Platform)' == 'Win32'">$(TARGET_X86_ID)</PLATFORM_ID>
-    </PropertyGroup>
-    <PropertyGroup>
-        <TARGET_WIN_VER>10</TARGET_WIN_VER>
-        <VERSION_FILE_STR>$(TARGET_WIN_VER).$(PLATFORM_ID).$(CONFIG_TYPE).$(TARGET_TOOLSET_ID)</VERSION_FILE_STR>
-        <VERSION_FILE_ID>$(TARGET_WIN_VER),$(PLATFORM_ID),$(CONFIG_TYPE),$(TARGET_TOOLSET_ID)</VERSION_FILE_ID>
-    </PropertyGroup>
     <ItemDefinitionGroup>
         <ResourceCompile>
             <PreprocessorDefinitions>
-                PRODUCT_NAME=\"$(PRODUCT_NAME)\";
-                PRODUCT_NAME_LONG=\"$(PRODUCT_NAME_LONG)\";
-                PRODUCT_COPYRIGHT=\"$(PRODUCT_COPYRIGHT)\";
-                PRODUCT_VERSION_STR=\"$(VERSION_QB_STR)\";
-                PRODUCT_VERSION_ID=$(VERSION_QB_ID);
-                VERSION_FILE_STR=\"$(VERSION_FILE_STR)\";
-                VERSION_FILE_ID=$(VERSION_FILE_ID);
-                %(PreprocessorDefinitions)
+              PRODUCT_NAME=\"$(PRODUCT_NAME)\";
+              PRODUCT_NAME_LONG=\"$(PRODUCT_NAME_LONG)\";
+              PRODUCT_COPYRIGHT=\"$(PRODUCT_COPYRIGHT)\";
+              PRODUCT_VERSION_STR=\"$(VERSION_QB_STR)\";
+              PRODUCT_VERSION_ID=$(VERSION_QB_ID);
+              %(PreprocessorDefinitions)
             </PreprocessorDefinitions>
         </ResourceCompile>
     </ItemDefinitionGroup>

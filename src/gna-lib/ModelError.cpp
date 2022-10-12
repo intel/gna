@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2020-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ModelError.h"
 
@@ -11,7 +11,7 @@
 
 using namespace GNA;
 
-Gna2ModelError ModelErrorHelper::lastError = ModelErrorHelper::GetCleanedError();
+ModelError ModelErrorHelper::lastError = {};
 
 void ModelErrorHelper::ExpectTrue(bool val, Gna2ModelError error)
 {
@@ -21,118 +21,55 @@ void ModelErrorHelper::ExpectTrue(bool val, Gna2ModelError error)
     }
 }
 
-void ModelErrorHelper::ExpectGtZero(int64_t val, Gna2ItemType valType)
+Gna2ModelError ModelErrorHelper::GetPartiallySetError(const Gna2ItemType ptrType,
+    const uint32_t ptrIndex,
+    const bool indexForParameter)
 {
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = valType;
-    e.Value = val;
-    e.Reason = Gna2ErrorTypeNotGtZero;
-    ExpectTrue(val > 0, e);
-}
-
-void ModelErrorHelper::ExpectEqual(int64_t val, int64_t ref, Gna2ItemType valType)
-{
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = valType;
-    ExpectEqual(val, ref, e.Source);
-}
-
-void ModelErrorHelper::ExpectEqual(int64_t val, int64_t ref, Gna2ModelItem item)
-{
-    ExpectTrue(val == ref, { item, Gna2ErrorTypeNotEqual, val });
-}
-
-void ModelErrorHelper::ExpectEqual(const ModelValue& val, const ModelValue& ref)
-{
-    ExpectEqual(val.GetValue(), ref.GetValue(), val.GetSource());
-}
-
-void ModelErrorHelper::ExpectBelowEq(const ModelValue& val, const ModelValue& ref)
-{
-    ExpectBelowEq(val.GetValue(), ref.GetValue(), val.GetSource());
-}
-
-void ModelErrorHelper::ExpectBelowEq(int64_t val, int64_t ref, Gna2ItemType valType)
-{
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = valType;
-    e.Value = val;
-    e.Reason = Gna2ErrorTypeAboveRange;
-    ExpectTrue(val <= ref, e);
-}
-
-void ModelErrorHelper::ExpectBelowEq(int64_t val, int64_t ref, Gna2ModelItem item)
-{
-    ExpectTrue(val <= ref, { item, Gna2ErrorTypeAboveRange, val });
-}
-
-void ModelErrorHelper::ExpectAboveEq(int64_t val, int64_t ref, Gna2ItemType valType)
-{
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = valType;
-    e.Value = val;
-    e.Reason = Gna2ErrorTypeBelowRange;
-    ExpectTrue(val >= ref, e);
-}
-
-void ModelErrorHelper::ExpectAboveEq(int64_t val, int64_t ref, Gna2ModelItem item)
-{
-    ExpectTrue(val >= ref, { item, Gna2ErrorTypeBelowRange, val });
-}
-
-void ModelErrorHelper::ExpectAboveEq(const ModelValue& val, const ModelValue& ref)
-{
-    ExpectAboveEq(val.GetValue(), ref.GetValue(), val.GetSource());
-}
-
-void ModelErrorHelper::ExpectMultiplicityOf(int64_t val, int64_t factor, Gna2ItemType valType)
-{
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = valType;
-    e.Value = val;
-    e.Reason = Gna2ErrorTypeNotMultiplicity;
-    ExpectTrue(val == 0 || (factor != 0 && (val % factor) == 0), e);
+    ModelError e;
+    e.Source.Type = ptrType;
+    if (indexForParameter)
+    {
+        e.Source.ParameterIndex = static_cast<int32_t>(ptrIndex);
+    }
+    else
+    {
+        e.Source.OperandIndex = static_cast<int32_t>(ptrIndex);
+    }
+    return e;
 }
 
 void ModelErrorHelper::ExpectNotNull(const void * const ptr,
     const Gna2ItemType ptrType,
-    const int32_t ptrIndex,
+    const uint32_t ptrIndex,
     const bool indexForParameter)
 {
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = ptrType;
-    if (indexForParameter)
-    {
-        e.Source.ParameterIndex = ptrIndex;
-    }
-    else
-    {
-        e.Source.OperandIndex = ptrIndex;
-    }
-    e.Value = 0;
+    auto e = GetPartiallySetError(ptrType, ptrIndex, indexForParameter);
     e.Reason = Gna2ErrorTypeNullNotAllowed;
+
     ExpectTrue(ptr != nullptr, e);
 }
 
-void ModelErrorHelper::ExpectBufferAligned(const void * const buffer, const uint32_t alignment)
+void ModelErrorHelper::ExpectNull(const void * const ptr,
+    const Gna2ItemType ptrType,
+    const uint32_t ptrIndex,
+    const bool indexForParameter)
 {
-    Gna2ModelError e = GetCleanedError();
-    e.Source.Type = Gna2ItemTypeOperandData;
-    e.Value = reinterpret_cast<int64_t>(buffer);
-    e.Reason = Gna2ErrorTypeNotAligned;
-    ExpectTrue(alignment != 0 && ((e.Value % alignment) == 0), e);
+    auto e = GetPartiallySetError(ptrType, ptrIndex, indexForParameter);
+    e.Reason = Gna2ErrorTypeNullRequired;
+    ExpectTrue(ptr == nullptr, e);
 }
 
-void ModelErrorHelper::SaveLastError(const Gna2ModelError& modelError)
+void ModelErrorHelper::SaveLastError(const ModelError& modelError)
 {
     lastError = modelError;
 }
 
 void ModelErrorHelper::PopLastError(Gna2ModelError& error)
 {
-    Expect::True(lastError.Source.Type != Gna2ItemTypeNone, Gna2StatusUnknownError);
+    constexpr auto empty = ModelError{};
+    Expect::False(lastError == empty, Gna2StatusModelErrorUnavailable);
     error = lastError;
-    lastError = GetCleanedError();
+    lastError = empty;
 }
 
 Gna2Status ModelErrorHelper::ExecuteSafelyAndStoreLastError(const std::function<Gna2Status()>& commandIn)
@@ -143,93 +80,76 @@ Gna2Status ModelErrorHelper::ExecuteSafelyAndStoreLastError(const std::function<
         {
             return commandIn();
         }
-        catch (GnaModelErrorException& exception)
+        catch (const GnaModelErrorException& exception)
         {
-            ModelErrorHelper::SaveLastError(exception.GetModelError());
+            SaveLastError(exception.GetModelError());
             throw GnaException(Gna2StatusModelConfigurationInvalid);
         }
     };
     return ApiWrapper::ExecuteSafely(command);
 }
 
-Gna2ModelError ModelErrorHelper::GetCleanedError()
-{
-    Gna2ModelError e = {};
-    e.Reason = Gna2ErrorTypeNone;
-    e.Value = 0;
-    e.Source.Type = Gna2ItemTypeNone;
-    e.Source.OperationIndex = GNA2_DISABLED;
-    e.Source.OperandIndex = GNA2_DISABLED;
-    e.Source.ParameterIndex = GNA2_DISABLED;
-    e.Source.ShapeDimensionIndex = GNA2_DISABLED;
-    for (auto& property : e.Source.Properties)
-    {
-        property = GNA2_DISABLED;
-    }
-    return e;
-}
-
-Gna2ModelError ModelErrorHelper::GetStatusError(Gna2Status status)
-{
-    auto e = GetCleanedError();
-    e.Source.Type = Gna2ItemTypeInternal;
-    e.Reason = Gna2ErrorTypeOther;
-    e.Value = status;
-    return e;
-}
-
 GnaModelErrorException::GnaModelErrorException(
     Gna2ItemType item,
     Gna2ErrorType errorType,
     int64_t value)
-    : GnaException{ Gna2StatusModelConfigurationInvalid }
+    : GnaException{ Gna2StatusModelConfigurationInvalid },
+    error{ ModelError{ errorType, value, item } }
 {
-    error = ModelErrorHelper::GetCleanedError();
-    error.Source.Type = item;
-    error.Reason = errorType;
-    error.Value = value;
 }
 
-GnaModelErrorException::GnaModelErrorException(uint32_t layerIndex, Gna2Status capturedCode)
-    : GnaException{ Gna2StatusModelConfigurationInvalid }
+GnaModelErrorException::GnaModelErrorException(uint32_t layerIndex, Gna2Status status)
+    : GnaException{ Gna2StatusModelConfigurationInvalid },
+    error{ ModelError{ status } }
 {
-    error = ModelErrorHelper::GetStatusError(capturedCode);
     SetLayerIndex(layerIndex);
 }
 
-void ModelErrorHelper::SetOperandIndexRethrow(GnaException& e, int32_t index)
-{
-    auto x = dynamic_cast<GnaModelErrorException*>(&e);
-    if(x != nullptr)
-    {
-        x->SetOperandIndex(index);
-        throw;
-    }
-    GnaModelErrorException n(e);
-    n.SetOperandIndex(index);
-    throw n;
-}
-
-void ModelErrorHelper::ExecuteForModelItem(const std::function<void()>& command,
-    int32_t operandIndexContext, int32_t parameterIndexContext)
+void GnaModelErrorException::DispatchAndFill(uint32_t operandIndex, uint32_t parameterIndex)
 {
     try
     {
-        command();
+        throw;
     }
     catch (GnaModelErrorException& e)
     {
-        e.SetOperandIndex(operandIndexContext);
-        e.SetParameterIndex(parameterIndexContext);
+        e.SetOperandIndex(operandIndex);
+        e.SetParameterIndex(parameterIndex);
         throw;
     }
     catch (GnaException& e)
     {
-        GnaModelErrorException n(e);
-        n.SetOperandIndex(operandIndexContext);
-        n.SetParameterIndex(parameterIndexContext);
-        throw n;
+        throw GnaModelErrorException(e, operandIndex, parameterIndex);
     }
+}
+
+void GnaModelErrorException::DispatchAndSetLayer(uint32_t layerIndex)
+{
+    try
+    {
+        throw;
+    }
+    catch (GnaModelErrorException& e)
+    {
+        e.SetLayerIndex(layerIndex);
+        throw;
+    }
+    catch (const GnaException& e)
+    {
+        throw GnaModelErrorException(layerIndex, e.GetStatus());
+    }
+    catch (...)
+    {
+        throw GnaModelErrorException(layerIndex);
+    }
+}
+
+GnaModelErrorException::GnaModelErrorException(GnaException& e, uint32_t operandIndex, uint32_t parameterIndex) :
+    GnaException{ e },
+    error{ ModelError(e.GetStatus()) }
+{
+    SetOperandIndex(operandIndex);
+    SetParameterIndex(parameterIndex);
 }
 
 const std::map<enum Gna2ErrorType, std::string>& ModelErrorHelper::GetAllErrorTypeStrings()
@@ -254,6 +174,7 @@ const std::map<enum Gna2ErrorType, std::string>& ModelErrorHelper::GetAllErrorTy
         {Gna2ErrorTypeArgumentMissing, "Gna2ErrorTypeArgumentMissing" },
         {Gna2ErrorTypeArgumentInvalid, "Gna2ErrorTypeArgumentInvalid" },
         {Gna2ErrorTypeRuntime,         "Gna2ErrorTypeRuntime" },
+        {Gna2ErrorTypeNoHardwareCompliantOperation, "Gna2ErrorTypeNoHardwareCompliantOperation" },
         {Gna2ErrorTypeOther,           "Gna2ErrorTypeOther" },
     };
     return ErrorTypeStrings;
@@ -288,10 +209,10 @@ const std::map<enum Gna2ItemType, std::string>& ModelErrorHelper::GetAllItemType
 #define MAX_MODEL_ERROR_MESSAGE_LENGTH 256
 std::string ModelErrorHelper::GetErrorString(const Gna2ModelError& error)
 {
-    std::string message = "Value:" + std::to_string(error.Value);
-    const auto errorType = GNA::StringHelper::GetFromMap(GetAllErrorTypeStrings(), error.Reason);
+    auto message = "Value:" + std::to_string(error.Value);
+    const auto errorType = StringHelper::GetFromMap(GetAllErrorTypeStrings(), error.Reason);
     message += ";ErrorType:" + errorType;
-    const auto itemType = GNA::StringHelper::GetFromMap(GetAllItemTypeStrings(), error.Source.Type);
+    const auto itemType = StringHelper::GetFromMap(GetAllItemTypeStrings(), error.Source.Type);
     message += ";ItemType:" + itemType;
     message += ";Gna2Model:model";
     AppendNotDisabled(message, error.Source.OperationIndex, "Operations");
@@ -314,17 +235,3 @@ void ModelErrorHelper::AppendNotDisabled(std::string& toAppend, int32_t index, c
     }
 }
 
-ModelValue::ModelValue(int64_t valueIn)
-    : Value{valueIn}
-{
-}
-
-int64_t ModelValue::GetValue() const
-{
-    return Value;
-}
-
-Gna2ModelItem ModelValue::GetSource() const
-{
-    return Source;
-}

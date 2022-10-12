@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -19,7 +19,7 @@ class GnaException : public std::runtime_error
 {
 public:
     explicit GnaException(Gna2Status status) :
-        std::runtime_error{ StatusHelper::ToString(status) },
+        std::runtime_error{ std::string{ "Gna2Status[" } + std::to_string(status) + "]" },
         Status{ status }
     {}
 

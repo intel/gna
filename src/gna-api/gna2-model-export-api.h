@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-model-export-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -31,9 +31,9 @@
 #include "gna2-common-api.h"
 
 #if !defined(_WIN32)
-#include <assert.h>
+#include <cassert>
 #endif
-#include <stdint.h>
+#include <cstdint>
 
 /**
  Creates configuration for model exporting.
@@ -72,10 +72,12 @@ GNA2_API enum Gna2Status Gna2ModelExportConfigRelease(
 
  @param exportConfigId Identifier of export configuration to set.
  @param sourceDeviceIndex Id of the device on which the exported model was created.
-    Use GNA2_DISABLED to export model from all available devices at one.
  @param sourceModelId Id of the source model, created previously with Gna2ModelCreate() function.
-     Use GNA2_DISABLED to export all models from given device at one.
  @return Status of the operation.
+ @retval Gna2StatusIdentifierInvalid when sourceDeviceIndex is not matching the one
+         retrieved from ::Gna2DeviceCreateForExport() or when source device has no model
+         with sourceModelId.
+
  */
 GNA2_API enum Gna2Status Gna2ModelExportConfigSetSource(
     uint32_t exportConfigId,
@@ -83,6 +85,11 @@ GNA2_API enum Gna2Status Gna2ModelExportConfigSetSource(
     uint32_t sourceModelId);
 
 /**
+ @deprecated Currently targetDeviceVersion is already set when using ::Gna2ModelExportConfigSetSource().
+ This function is no longer necessary and will return success when given targetDeviceVersion
+ is compatible with targetDeviceVersion provided in ::Gna2DeviceCreateForExport,
+ Gna2StatusDeviceVersionInvalid otherwise.
+
  Sets version of the device that exported model will be used with.
 
  - Model will be validated against provided target device.
@@ -90,6 +97,8 @@ GNA2_API enum Gna2Status Gna2ModelExportConfigSetSource(
  @param exportConfigId Identifier of export configuration to set.
  @param targetDeviceVersion Device on which model will be used.
  @return Status of the operation.
+ @retval Gna2StatusDeviceVersionInvalid when targetDeviceVersion is not compatible
+         with targetDeviceVersion provided in ::Gna2DeviceCreateForExport.
  */
 GNA2_API enum Gna2Status Gna2ModelExportConfigSetTarget(
     uint32_t exportConfigId,
@@ -126,6 +135,35 @@ enum Gna2ModelExportComponent
      for RW and RO memory (in order) are required.
     */
     Gna2ModelExportComponentLegacySueCreekHeader = 3,
+
+    Gna2ModelExportComponentReadOnlyDump = 4,
+
+    Gna2ModelExportComponentScratchDump = 6,
+    Gna2ModelExportComponentStateDump = 7,
+
+    Gna2ModelExportComponentInputDump = 11,
+    Gna2ModelExportComponentOutputDump = 12,
+
+    Gna2ModelExportComponentExternalBufferInputDump = 21,
+    Gna2ModelExportComponentExternalBufferOutputDump = 22,
+};
+
+/**
+ Type of exported memory buffer tag.
+
+ Used to tag memory buffer and assign special properties or BAR for exported memory buffer.
+ @see Gna2MemorySetTag()
+ */
+enum Gna2MemoryTag
+{
+    Gna2MemoryTagReadWrite = 0x0100,
+    Gna2MemoryTagInput = 0x0200,
+    Gna2MemoryTagOutput = 0x0400,
+    Gna2MemoryTagReadOnly = 0x0800,
+    Gna2MemoryTagExternalBufferInput = 0x1000,
+    Gna2MemoryTagExternalBufferOutput = 0x2000,
+    Gna2MemoryTagScratch = 0x4000,
+    Gna2MemoryTagState = 0x8000,
 };
 
 /**

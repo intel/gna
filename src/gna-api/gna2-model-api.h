@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-model-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -35,9 +35,9 @@
 #include "gna2-common-api.h"
 
 #if !defined(_WIN32)
-#include <assert.h>
+#include <cassert>
 #endif
-#include <stdint.h>
+#include <cstdint>
 
 /* Model types forward declarations. */
 struct Gna2Model;
@@ -131,20 +131,24 @@ enum Gna2OperationType
             Specifies input tensor.
             Supported values:
                 - Mode: {::Gna2TensorModeDefault}
-                - Type: {::Gna2DataTypeInt16},
-                - Shape: [N x W] for 1D Convolution, where:
+                - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16},
+                - Shape: [N x W] for 1D Convolution and [N x H x W x C] for 2D Convolution, where:
                     - N is a batch size (number of vectors), currently only N=1 is supported
+                    - H is a height of input tensor
                     - W is a width of input tensor
+                    - C is a depth of input tensor
         + 1: outputs [required]:
             Specifies output tensor, as the final output of all composed functions.
             Supported values:
                 - Mode: {::Gna2TensorModeDefault}
-                - Type: {::Gna2DataTypeInt16, ::Gna2DataTypeInt32},
+                - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16, ::Gna2DataTypeInt32},
                     @note When activationFunction is disabled Type is always ::Gna2DataTypeInt32.
-                - Shape: [N x W x C] for 1D Convolution, where:
+                - Shape: [N x W x C] for 1D Convolution and [N x H x W x C] for 2D Convolution, where:
                     - N is a batch size (number of vectors), currently only N=1 is supported
+                    - H is a height of result tensor
                     - W is a width of result tensor
                     - C is a depth of result tensor, same as the number of filters (filter N dimension)
+                - Layout: When set to "GNA1" the GNA 1.0 1D convolution (aka legacy CNN1D) will be enforced.
         + 2: filters [required]:
             Specifies filters (kernels) tensor. Filters are stored one after the other.
             @note: For 2D ::Gna2OperationTypeConvolution operation each filter must start
@@ -152,16 +156,22 @@ enum Gna2OperationType
             Supported values:
                 - Mode: {::Gna2TensorModeDefault, ::Gna2TensorModeConstantScalar}
                 - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16},
-                - Shape: [N x W] for 1D Convolution, where:
+                - Shape: [N x W] for 1D Convolution and [N x H x W x C] for 2D Convolution, where:
                     - N is a number of filters
+                    - H is a height of each filter
                     - W is a width of each filter
+                    - C is a depth of each filter, must match the depth of input tensor
         + 3: biases [optional]:
             Supported values:
-                - Mode: {::Gna2TensorModeDefault}
+                - Mode: {::Gna2TensorModeDefault, ::Gna2TensorModeDisabled}
                 - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16, ::Gna2DataTypeInt32},
                 - Shape: (@see biasMode parameter), can be set 0, as is calculated by GNA,
                     - For biasMode ::Gna2BiasModeDefault: [N] 1D Vector, where
                         - N is a number of filters,
+                    - For biasMode ::Gna2BiasModePerStride: [N x H x W] 1D Vector, where
+                        - N is a number of filters,
+                        - H is a number of the convolution output rows,
+                        - W is a number of the convolution output columns,
         + 4: activationFunction [optional]:
             Specifies PWL activation function segment tensor.
             - Segments have to be contiguous.
@@ -178,10 +188,15 @@ enum Gna2OperationType
                 For 1D convolution operation:
                     [W] 1D where:
                      - W is a number of elements to move in W dimension
+                    @note 1D shape will be always auto-promoted to 2D, with H=1
+                For 2D convolution operation:
+                    [H x W] 2D where:
+                     - H is a number of elements to move in H dimension
+                     - W is a number of elements to move in W dimension
         + 1: Gna2BiasMode biasMode [optional]:
             Mode of bias operation.
             Assumed ::Gna2BiasModeDefault if not provided.
-            Supported values: {::Gna2BiasModeDefault}
+            Supported values: {::Gna2BiasModeDefault, ::Gna2BiasModePerStride}
         + 2: Gna2PoolingMode poolingMode [optional]:
             Required for fused operation.
             If enabled poolingWindow and poolingStride should be also provided.
@@ -191,12 +206,30 @@ enum Gna2OperationType
             Supported values:
             - For 1D convolution operation: [ W ] 1D where:
                 - W is a width of window
+                @note 1D shape will be always auto-promoted to 2D, with H=1
+            - For 2D convolution operation:
+                - [ H x W ] 2D where:
+                    - H is a height of window
+                    - W is a width of window
         + 4: Gna2Shape poolingStride [optional]:
             Required for fused operation (i.e., poolingMode is enabled).
             Specifies pooling window stride dimensions.
             Supported values:
                 - For 1D convolution operation: [W] 1D where:
                     - W is a number of elements to move in W dimension
+                    @note 1D shape will be always auto-promoted to 2D, with H=1
+                - For 2D convolution operation: [H x W] 2D where:
+                    - H is a number of elements to move in H dimension
+                    - W is a number of elements to move in W dimension
+        + 5: Gna2Shape zeroPadding [optional]:
+            Supported only for 2D convolution.
+            Specifies automatic input zero-padding dimensions.
+            Used to maintain same input-output volume shape
+            or when input dimensions have no common natural divider with filter and stride.
+            Supported values:
+                [H x W] 2D where:
+                    - H is a number of 0s added at the top and bottom of input
+                    - W is a number of 0s added from the left and the right of input
     */
     Gna2OperationTypeConvolution = 1,
 
@@ -211,7 +244,7 @@ enum Gna2OperationType
             Specifies input tensor.
             Supported values:
                 - Mode: {::Gna2TensorModeDefault}
-                - Type: {::Gna2DataTypeInt16},
+                - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16},
                 - Layout: Default: [H x W] Row-major, (aka flat),
                 - Shape: [H x W] 2D matrix, where:
                     - H is a number of vectors (aka batch size),
@@ -251,7 +284,7 @@ enum Gna2OperationType
             Specifies input tensor.
             Supported values:
                 - Mode: {::Gna2TensorModeDefault}
-                - Type: {::Gna2DataTypeInt16},
+                - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16},
                 - Layout:
                     @note [W x N] Row-major (aka interleaved), vectors are columns.
                 - Shape: [W x N] 2D matrix, where:
@@ -261,14 +294,14 @@ enum Gna2OperationType
             Specifies output tensor.
             Supported values:
                 - Mode: {::Gna2TensorModeDefault}
-                - Type: {::Gna2DataTypeInt16, ::Gna2DataTypeInt32},
+                - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16, ::Gna2DataTypeInt32},
                     @note When activationFunction is disabled Type is always ::Gna2DataTypeInt32.
                 - Layout: same as inputs
                 - Shape:  same as inputs
         + 2: weights [required]:
             Specifies weight tensor.
             Supported values:
-                - Mode: {::Gna2TensorModeDefault}
+                - Mode: {::Gna2TensorModeDefault, ::Gna2TensorModeConstantScalar}
                 - Type: {::Gna2DataTypeInt8, ::Gna2DataTypeInt16},
                 - Shape: [H x W] 2D Matrix, where:
                     - H is a number of output vector elements
@@ -492,11 +525,6 @@ enum Gna2OperationType
     Parameters: none.
     */
     Gna2OperationTypeTransposition = 7,
-
-    /**
-    Control-flow operation with threshold parameter.
-    */
-    Gna2OperationTypeThreshold = 8,
 };
 
 /**
@@ -604,9 +632,11 @@ enum Gna2TensorMode
      */
     Gna2TensorModeConstantScalar = 0x010000,
 
+
+    Gna2TensorModeExternalBuffer = 0x001000,
+
     /**
      To disable optional tensors.
-     @warning Reserved for future purposes.
      */
     Gna2TensorModeDisabled = GNA2_DISABLED,
 
@@ -662,7 +692,7 @@ enum Gna2DataType
      4 bit Unsigned Integer.
      Currently not supported.
      */
-    Gna2DataTypeUint4 =7,
+    Gna2DataTypeUint4 = 7,
 
     /**
      1 Byte Unsigned Integer, use uint8_t data.
@@ -981,7 +1011,7 @@ struct Gna2ModelError;
  @param [out] error The detailed description of model issue.
  @return Status of fetching the model error.
     @retval ::Gna2StatusSuccess The error has been fetched successfully.
-    @retval ::Gna2StatusUnknownError No issue to report.
+    @retval ::Gna2StatusModelErrorUnavailable No issue to report or already retrieved.
     @retval ::Gna2StatusNullArgumentNotAllowed The error pointer was NULL.
  */
 GNA2_API enum Gna2Status Gna2ModelGetLastError(struct Gna2ModelError * error);
@@ -1273,6 +1303,13 @@ enum Gna2ErrorType
      Runtime error occurred during model creation.
      */
     Gna2ErrorTypeRuntime = -17,
+
+    /**
+     None of model operations is compliant with present hardware GNA device.
+
+     Only software processing is available for this model.
+     */
+    Gna2ErrorTypeNoHardwareCompliantOperation = -18,
 
     /**
      Unable to determine the root cause of the issue.

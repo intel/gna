@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "HardwareRequest.h"
 
@@ -9,17 +9,13 @@
 #include "Address.h"
 #include "CompiledModel.h"
 #include "GnaException.h"
-#include "GnaTypes.h"
 #include "HardwareLayer.h"
 #include "HardwareModelScorable.h"
-#include "KernelArguments.h"
 #include "Layer.h"
 #include "LayerConfiguration.h"
 #include "RecurrentFunction.h"
 #include "RequestConfiguration.h"
 
-#include "gna-api-status.h"
-#include "gna-api-types-xnn.h"
 
 #include <utility>
 
@@ -57,6 +53,7 @@ void HardwareRequest::Invalidate()
         auto const layerCfg = it->second.get();
 
         generateBufferPatches(*layerCfg, layer, *hwLayer);
+
         if (layer.Operation == INTEL_AFFINE || layer.Operation == INTEL_GMM)
         {
             auto const nnopTypeOffset = hwLayer->GetLdNnopOffset();
@@ -125,11 +122,11 @@ void HardwareRequest::generateBufferPatches(const LayerConfiguration& layerConfi
             ldOffset = hwLayer.GetLdOutputOffset();
             if (INTEL_RECURRENT == layer.Operation)
             {
-                auto recurrentFunction = layer.Transforms.Get<RecurrentFunction>(RecurrentTransform);
-                auto newFbAddress = recurrentFunction->CalculateFeedbackBuffer(address);
-                auto feedbackBufferOffset = hwModel.GetBufferOffsetForConfiguration(
+                auto const & recurrentFunction = layer.Transforms.Get<RecurrentFunction>(RecurrentTransform);
+                auto const newFbAddress = recurrentFunction.CalculateFeedbackBuffer(address);
+                auto const feedbackBufferOffset = hwModel.GetBufferOffsetForConfiguration(
                     newFbAddress, requestConfiguration);
-                auto ldFeedbackOffset = hwLayer.GetLdFeedbackOffset();
+                auto const ldFeedbackOffset = hwLayer.GetLdFeedbackOffset();
                 ldPatches.push_back({ ldFeedbackOffset, feedbackBufferOffset, sizeof(uint32_t) });
             }
             break;

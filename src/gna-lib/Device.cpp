@@ -1,24 +1,15 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "Device.h"
 
 #include "ActiveList.h"
 #include "Expect.h"
 #include "GnaException.h"
-#include "Memory.h"
-#include "Request.h"
 #include "RequestConfiguration.h"
 
-#if defined(_WIN32)
-#include "WindowsDriverInterface.h"
-#else // linux
-#include "LinuxDriverInterface.h"
-#endif
-
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 
@@ -26,30 +17,16 @@ using namespace GNA;
 
 uint32_t Device::modelIdSequence = 0;
 
-Device::Device(uint32_t deviceIndex, uint32_t threadCount) :
-    driverInterface
-    {
-#if defined(_WIN32)
-        std::make_unique<WindowsDriverInterface>()
-#else // GNU/Linux / Android / ChromeOS
-        std::make_unique<LinuxDriverInterface>()
-#endif
-    },
-    requestHandler{ threadCount }
+Device::Device(std::unique_ptr<HardwareCapabilities>&& hardwareCapabilitiesIn) :
+    hardwareCapabilities{ std::move(hardwareCapabilitiesIn) }
 {
-    const auto success = driverInterface->OpenDevice(deviceIndex);
-    if (success)
-    {
-        hardwareCapabilities.DiscoverHardware(driverInterface->GetCapabilities());
-    }
-    accelerationDetector.SetHardwareAcceleration(
-        hardwareCapabilities.IsHardwareSupported());
+    accelerationDetector.SetHardwareAcceleration(hardwareCapabilities->IsHardwareSupported());
     accelerationDetector.PrintAllAccelerationModes();
 }
 
 DeviceVersion Device::GetVersion() const
 {
-    return hardwareCapabilities.GetHardwareDeviceVersion();
+    return hardwareCapabilities->GetHardwareDeviceVersion();
 }
 
 uint32_t Device::GetNumberOfThreads() const
@@ -60,6 +37,19 @@ uint32_t Device::GetNumberOfThreads() const
 void Device::SetNumberOfThreads(uint32_t threadCount)
 {
     requestHandler.ChangeNumberOfThreads(threadCount);
+}
+
+uint32_t Device::StoreModel(std::unique_ptr<CompiledModel> && compiledModel)
+{
+    if (!compiledModel)
+    {
+        throw GnaException(Gna2StatusResourceAllocationError);
+    }
+
+    auto modelId = modelIdSequence++;
+
+    models.emplace(modelId, std::move(compiledModel));
+    return modelId;
 }
 
 void Device::AttachBuffer(uint32_t configId,
@@ -74,7 +64,7 @@ void Device::CreateConfiguration(uint32_t modelId, uint32_t *configId)
 {
     auto &model = *models.at(modelId);
     requestBuilder.CreateConfiguration(model, configId,
-                    hardwareCapabilities.GetDeviceVersion());
+        *hardwareCapabilities);
 }
 
 void Device::ReleaseConfiguration(uint32_t configId)
@@ -82,30 +72,23 @@ void Device::ReleaseConfiguration(uint32_t configId)
     requestBuilder.ReleaseConfiguration(configId);
 }
 
-void Device::EnableHardwareConsistency(
-    uint32_t configId, DeviceVersion deviceVersion)
+bool Device::IsVersionConsistent(DeviceVersion deviceVersion) const
 {
-    if (Gna2DeviceVersionSoftwareEmulation == deviceVersion)
-    {
-        throw GnaException(Gna2StatusDeviceVersionInvalid);
-    }
-
-    auto& requestConfiguration = requestBuilder.GetConfiguration(configId);
-    requestConfiguration.SetHardwareConsistency(deviceVersion);
+    return hardwareCapabilities->GetDeviceVersion() == deviceVersion;
 }
 
-void Device::EnforceAcceleration(uint32_t configId, Gna2AccelerationMode accelMode)
+void Device::EnforceAcceleration(uint32_t configId, Gna2AccelerationMode accelerationMode)
 {
     auto& requestConfiguration = requestBuilder.GetConfiguration(configId);
-    requestConfiguration.EnforceAcceleration(accelMode);
+    requestConfiguration.EnforceAcceleration(accelerationMode);
 }
 
 void Device::AttachActiveList(uint32_t configId, uint32_t layerIndex,
-        uint32_t indicesCount, const uint32_t* const indices)
+    uint32_t indicesCount, const uint32_t* const indices)
 {
     Expect::NotNull(indices);
 
-    auto activeList = ActiveList{ indicesCount, indices };
+    const auto activeList = ActiveList{ indicesCount, indices };
     requestBuilder.AttachActiveList(configId, layerIndex, activeList);
 }
 
@@ -119,20 +102,9 @@ bool Device::HasRequestId(uint32_t requestId) const
     return requestHandler.HasRequest(requestId);
 }
 
-void Device::MapMemory(Memory & memoryObject)
+CompiledModel const& Device::GetModel(uint32_t modelId)
 {
-    if (hardwareCapabilities.IsHardwareSupported())
-    {
-        memoryObject.Map(*driverInterface);
-    }
-}
-
-void Device::UnMapMemory(Memory & memoryObject)
-{
-    if (hardwareCapabilities.IsHardwareSupported())
-    {
-        memoryObject.Unmap(*driverInterface);
-    }
+    return *models.at(modelId);
 }
 
 void Device::ReleaseModel(uint32_t const modelId)
@@ -158,46 +130,13 @@ void Device::Stop()
     requestHandler.StopRequests();
 }
 
-void Device::SetInstrumentationUnit(uint32_t configId, Gna2InstrumentationUnit instrumentationUnit)
-{
-    auto& requestConfiguration = requestBuilder.GetProfilerConfiguration(configId);
-    requestConfiguration.SetUnit(instrumentationUnit);
-}
-
-void Device::SetHardwareInstrumentation(uint32_t configId, Gna2InstrumentationMode instrumentationMode)
-{
-    ProfilerConfiguration::ExpectValid(instrumentationMode);
-    if (instrumentationMode > Gna2InstrumentationModeWaitForMmuTranslation
-        && !hardwareCapabilities.HasFeature(NewPerformanceCounters))
-    {
-        throw GnaException(Gna2StatusDeviceVersionInvalid);
-    }
-
-    auto& requestConfiguration = requestBuilder.GetProfilerConfiguration(configId);
-    requestConfiguration.SetHwPerfEncoding(instrumentationMode);
-}
-
 bool Device::HasModel(uint32_t modelId) const
 {
     return models.count(modelId) > 0;
 }
 
-uint32_t Device::CreateProfilerConfiguration(
-    std::vector<Gna2InstrumentationPoint>&& selectedInstrumentationPoints,
-    uint64_t* results)
-{
-    return requestBuilder.CreateProfilerConfiguration(std::move(selectedInstrumentationPoints), results);
-}
-
-void Device::AssignProfilerConfigToRequestConfig(uint32_t instrumentationConfigId,
-    uint32_t requestConfigId)
+void Device::AssignProfilerConfigToRequestConfig(uint32_t requestConfigId, ProfilerConfiguration& profilerConfiguration)
 {
     auto& requestConfiguration = requestBuilder.GetConfiguration(requestConfigId);
-    auto& profilerConfiguration = requestBuilder.GetProfilerConfiguration(instrumentationConfigId);
     requestConfiguration.AssignProfilerConfig(&profilerConfiguration);
-}
-
-void Device::ReleaseProfilerConfiguration(uint32_t configId)
-{
-    requestBuilder.ReleaseProfilerConfiguration(configId);
 }

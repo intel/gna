@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -14,9 +14,6 @@
 #include "ModelWrapper.h"
 #include "Tensor.h"
 #include "XnnKernel.h"
-#include "common.h"
-
-#include "gna-api.h"
 
 #include <memory>
 #include <stdexcept>
@@ -33,9 +30,8 @@ struct TransformFactoryConfig
     const BaseAddress outputBuffer;
     const LayerValidator& validator;
 
-    template<class T>
-    TransformFactoryConfig(const Tensor *inputIn, const Tensor *outputIn, DataMode outputModeIn,
-        BaseAddress outputBufferIn, const T& operation, const LayerValidator& validatorIn) :
+    TransformFactoryConfig(const Tensor *inputIn, const Tensor *outputIn, const DataMode & outputModeIn,
+        BaseAddress outputBufferIn, const Gna2Operation& operation, const LayerValidator& validatorIn) :
         input{ inputIn }, output{ outputIn }, outputMode{ outputModeIn }, outputBuffer{ outputBufferIn },
         validator{ validatorIn }
     {
@@ -46,15 +42,11 @@ struct TransformFactoryConfig
     bool HasMandatoryActivation() const;
     bool IsActivationNotSupported() const;
     Gna2Tensor GetActivation() const;
-    static Gna2Tensor GetActivation(const void * layerDetails, nn_operation operationType);
 
 protected:
-    void InitActivation(const nn_layer& layer);
     void InitActivation(const Gna2Operation& operation);
-private:
 
-    bool HasMandatoryActivation(const void * layerDetails) const;
-
+    private:
     static bool HasMandatoryActivation(const Gna2Operation& operation);
 
     static Gna2Tensor GetActivation(const Gna2Operation& operation);
@@ -117,11 +109,6 @@ public:
         throw GnaException(Gna2StatusXnnErrorLyrCfg);
     }
 
-    virtual bool Is1D() const
-    {
-        return false;
-    }
-
     const Tensor * const Input;
     std::unique_ptr<Tensor> Output;
     TransformOperation const Operation;
@@ -172,8 +159,12 @@ public:
     // set output when transform is final layer transform and uses user provided layer output buffer
     virtual void SetOutput(const BaseAddress& outputBuffer) override
     {
-        Output->UpdateBuffer(outputBuffer);
-        hiddenConfig->SetBuffer(OutputOperandIndex, outputBuffer);
+        const std::function<void()> command = [&]()
+        {
+            Output->UpdateBuffer(outputBuffer);
+            hiddenConfig->SetBuffer(OutputOperandIndex, outputBuffer);
+        };
+        ModelErrorHelper::ExecuteForModelItem(command, OutputOperandIndex);
     }
 
 protected:
@@ -201,17 +192,17 @@ protected:
     std::unique_ptr<KernelConfig<TransformType>> hiddenConfig;
 
     inline std::unique_ptr<ExecutionKernelConfig<TransformType>> createExecutionConfig(
-        const LayerConfiguration* layerConfiguration, ExecutionConfig const & execution) const
+        const LayerConfiguration * layerConfiguration, ExecutionConfig const & execution) const
     {
         if (nullptr == layerConfiguration)
         {
             return std::make_unique<ExecutionKernelConfig<TransformType>>(
-                hiddenConfig.get(), execution);
+                *hiddenConfig.get(), execution);
         }
         else
         {
             return std::make_unique<ExecutionKernelConfig<TransformType>>(
-                static_cast<KernelConfig<TransformType>*>(layerConfiguration->ConfigList[Operation].get()),
+                *static_cast<KernelConfig<TransformType>*>(layerConfiguration->ConfigList[Operation].get()),
                 execution);
         }
     }
@@ -225,13 +216,13 @@ protected:
     {
         if (nullptr != config.Intermediate && nullptr != config.Intermediate->cnnFusedBuffer)
         {
-            if (nullptr == config.RequestConfig->Inputs)
+            if (nullptr == config.RequestConfig.Inputs)
             {
-                config.RequestConfig->SetBuffer(GNA::InputOperandIndex, config.Intermediate->cnnFusedBuffer);
+                config.RequestConfig.SetBuffer(GNA::InputOperandIndex, config.Intermediate->cnnFusedBuffer);
             }
-            if (nullptr == config.RequestConfig->Outputs)
+            if (nullptr == config.RequestConfig.Outputs)
             {
-                config.RequestConfig->SetBuffer(GNA::OutputOperandIndex, config.Intermediate->cnnFusedBuffer);
+                config.RequestConfig.SetBuffer(GNA::OutputOperandIndex, config.Intermediate->cnnFusedBuffer);
             }
         }
     }
@@ -272,14 +263,14 @@ public:
 
 protected:
     TransformAl(TransformOperation operation,
-        const KernelMap<KernelType>* kernelsIn,
-        const KernelMap<KernelTypeAl>* kernelsAlIn,
+        const KernelMap<KernelType> * kernelsIn,
+        const KernelMap<KernelTypeAl> * kernelsAlIn,
         Tensor const * input) :
         Transform<TransformType, KernelType>{ operation, kernelsIn, input },
         kernelsAl{ kernelsAlIn }
     {};
 
-    const KernelMap<KernelTypeAl>* kernelsAl;
+    const KernelMap<KernelTypeAl> * kernelsAl;
 };
 
 

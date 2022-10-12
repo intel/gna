@@ -1,15 +1,12 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
-#include "igemv.h"
+#include "saturate.h"
 #include "igemv16.h"
 
 #include "KernelArguments.h"
-
-#include "common.h"
-#include "gna-api-types-xnn.h"
 
 void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config)
 {
@@ -21,27 +18,27 @@ void AffineKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * const config
     uint32_t kk;
     int16_t const * weight;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     kpartial = (config->BufferElementCount[inputVectorCount - 1 + XNN_N_GROUP_MAX]) / inputVectorCount;
     nKpartial = inputElementCount / kpartial;
 
     auto transposeConfig = TransposeConfig::MakeFrom(config);
-    TransposeKernelImpl(&transposeConfig);
+    TransposeKernelImpl2B(&transposeConfig);
 
     int64_t sum = 0;
     for (i = 0; i < outputElementCount; i++)
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.biasesSimple, config->RequestConfig->Transform.bytesPerBias, i);
+            sum = getBias(config->RequestConfig.Transform.biasesSimple, config->RequestConfig.Transform.bytesPerBias, i);
 
             for (kk = 0; kk < nKpartial + 1; kk++) {
                 input = config->Intermediate->d0 + j*inputElementCount + kk * kpartial;
@@ -66,14 +63,14 @@ void AffineKernelImpl2B2B(ExecutionKernelConfig<AffineConfig> const * const conf
     uint32_t kk;
     int16_t const * weight;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     kpartial = (config->BufferElementCount[inputVectorCount - 1 + XNN_N_GROUP_MAX]) / inputVectorCount;
     nKpartial = inputElementCount / kpartial;
@@ -86,7 +83,7 @@ void AffineKernelImpl2B2B(ExecutionKernelConfig<AffineConfig> const * const conf
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.biasesSimple, config->RequestConfig->Transform.bytesPerBias, i);
+            sum = getBias(config->RequestConfig.Transform.biasesSimple, config->RequestConfig.Transform.bytesPerBias, i);
 
             for (kk = 0; kk < nKpartial + 1; kk++) {
                 input = config->Intermediate->d0 + j*inputElementCount + kk * kpartial;
@@ -111,14 +108,14 @@ void AffineKernelImpl2B1B(ExecutionKernelConfig<AffineConfig> const * const conf
     uint32_t nKpartial;
     int16_t const * weight;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int8_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int8_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     auto transposeConfig = TransposeConfig::MakeFrom(config);
     TransposeKernelImpl1B(&transposeConfig);
@@ -131,7 +128,7 @@ void AffineKernelImpl2B1B(ExecutionKernelConfig<AffineConfig> const * const conf
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.biasesSimple, config->RequestConfig->Transform.bytesPerBias, i);
+            sum = getBias(config->RequestConfig.Transform.biasesSimple, config->RequestConfig.Transform.bytesPerBias, i);
 
             for (kk = 0; kk < nKpartial + 1; kk++) {
                 input = ((int8_t*)config->Intermediate->d0) + j*inputElementCount + kk * kpartial;
@@ -153,20 +150,20 @@ void AffineMultiBiasKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * con
     uint32_t k;
     uint32_t kk;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     const uint32_t kpartial = (config->BufferElementCount[inputVectorCount - 1 + XNN_N_GROUP_MAX]) / inputVectorCount;
     const uint32_t nKpartial = inputElementCount / kpartial;
 
     auto transposeConfig = TransposeConfig::MakeFrom(config);
-    TransposeKernelImpl(&transposeConfig);
+    TransposeKernelImpl2B(&transposeConfig);
 
     int16_t const * weight;
     int64_t sum = 0;
@@ -174,7 +171,7 @@ void AffineMultiBiasKernelImpl2B(ExecutionKernelConfig<AffineConfig> const * con
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.multiBias, config->RequestConfig->Transform.bytesPerBias, i*config->RequestConfig->Transform.multiBiasVectorCount);
+            sum = getBias(config->RequestConfig.Transform.multiBias, config->RequestConfig.Transform.bytesPerBias, i*config->RequestConfig.Transform.multiBiasVectorCount);
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
@@ -199,14 +196,14 @@ void AffineMultiBiasKernelImpl2B2B(ExecutionKernelConfig<AffineConfig> const * c
     uint32_t k;
     uint32_t kk;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int16_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     const uint32_t kpartial = (config->BufferElementCount[inputVectorCount - 1 + XNN_N_GROUP_MAX]) / inputVectorCount;
     const uint32_t nKpartial = inputElementCount / kpartial;
@@ -219,7 +216,7 @@ void AffineMultiBiasKernelImpl2B2B(ExecutionKernelConfig<AffineConfig> const * c
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.multiBias, config->RequestConfig->Transform.bytesPerBias, i*config->RequestConfig->Transform.multiBiasVectorCount);
+            sum = getBias(config->RequestConfig.Transform.multiBias, config->RequestConfig.Transform.bytesPerBias, i*config->RequestConfig.Transform.multiBiasVectorCount);
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {
@@ -243,14 +240,14 @@ void AffineMultiBiasKernelImpl2B1B(ExecutionKernelConfig<AffineConfig> const * c
     uint32_t k;
     uint32_t kk;
 
-    auto inputVectorCount = config->RequestConfig->Transform.inputVectorCount;
-    auto inputElementCount = config->RequestConfig->Transform.inputElementCount;
-    auto input = reinterpret_cast<int8_t const *>(config->RequestConfig->Inputs);
+    auto inputVectorCount = config->RequestConfig.Transform.inputVectorCount;
+    auto inputElementCount = config->RequestConfig.Transform.inputElementCount;
+    auto input = reinterpret_cast<int8_t const *>(config->RequestConfig.Inputs);
 
-    auto weights2B = config->RequestConfig->Transform.weights2B;
+    auto weights2B = config->RequestConfig.Transform.weights2B;
 
-    auto outputElementCount = config->RequestConfig->Transform.outputElementCount;
-    auto output = reinterpret_cast<int32_t *>(config->RequestConfig->Outputs);
+    auto outputElementCount = config->RequestConfig.Transform.outputElementCount;
+    auto output = reinterpret_cast<int32_t *>(config->RequestConfig.Outputs);
 
     const uint32_t kpartial = (config->BufferElementCount[inputVectorCount - 1]) / inputVectorCount;
     const uint32_t nKpartial = inputElementCount / kpartial;
@@ -264,7 +261,7 @@ void AffineMultiBiasKernelImpl2B1B(ExecutionKernelConfig<AffineConfig> const * c
     {
         for (j = 0; j < inputVectorCount; j++)
         {
-            sum = getBias(config->RequestConfig->Transform.multiBias, config->RequestConfig->Transform.bytesPerBias, i*config->RequestConfig->Transform.multiBiasVectorCount);
+            sum = getBias(config->RequestConfig.Transform.multiBias, config->RequestConfig.Transform.bytesPerBias, i*config->RequestConfig.Transform.multiBiasVectorCount);
 
             for (kk = 0; kk < nKpartial + 1; kk++)
             {

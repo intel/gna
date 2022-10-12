@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-inference-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -26,7 +26,7 @@
 
 #include "gna2-common-api.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 /**
  Adds single request configuration for use with the model.
@@ -105,17 +105,20 @@ GNA2_API enum Gna2Status Gna2RequestConfigEnableActiveList(
     uint32_t const * indices);
 
 /**
+ @deprecated Hardware Consistency is now always enabled. This function will have no effect.
+ For backward compatibility it will return success when present configuration is compatible
+ with selected deviceVersion, Gna2StatusDeviceVersionInvalid otherwise.
  Enables software result consistency with selected device version.
 
  Assures that for given request config software mode inference results
  (scores) are bit-exact with that produced by the hardware device .
  Useful e.g. for verification of results from model created and exported
  for GNA embedded devices.
- @see Gna2AccelerationMode.
 
  @param requestConfigId Identifier of affected request configuration.
  @param deviceVersion Device version to be consistent with.
  @return Status of the operation.
+ @retval Gna2StatusDeviceVersionInvalid when deviceVersion is not compatible with present configuration
  */
 GNA2_API enum Gna2Status Gna2RequestConfigEnableHardwareConsistency(
     uint32_t requestConfigId,
@@ -127,13 +130,8 @@ GNA2_API enum Gna2Status Gna2RequestConfigEnableHardwareConsistency(
  Current acceleration modes availability depends on the CPU type.
  Available modes are detected by GNA.
 
- @note
- - ::Gna2AccelerationModeHardware: in some GNA hardware generations, model components unsupported
-   by hardware will be processed using software acceleration.
-
- When software inference is used, by default "fast" algorithm is used
- and results may be not bit-exact with these produced by hardware device.
- @see Gna2RequestConfigEnableHardwareConsistency to enable bit-exact results consistency.
+  Inference results (scores) in software modes are bit-exact with that produced
+  by the present or selected target hardware device.
  */
 enum Gna2AccelerationMode
 {
@@ -165,8 +163,6 @@ enum Gna2AccelerationMode
 
      Enforces the usage of GNA Hardware acceleration.
      Hardware acceleration has saturation detection always enabled.
-     For some older GNA hardware generations, model components unsupported
-     by hardware will be processed using software acceleration.
      */
     Gna2AccelerationModeHardware = 2,
 
@@ -201,6 +197,19 @@ enum Gna2AccelerationMode
      using basic x86 CPU instruction set.
      */
     Gna2AccelerationModeGeneric = 6,
+
+    /**
+     Hardware mode with automatic fallback to software acceleration mode.
+
+     To reduce the probability of audio glitches when running "RT" workload user can use immediate
+     auto software fallback mechanism.
+     When enabled GNA uses software acceleration fallback whenever the GNA driver request
+     queue is not empty, regardless of any other circumstances. Software processing is executed
+     automatically and immediately after driver returns queue not empty status.
+     This minimizes latency and maximize probability to process given request on time  when
+     hardware is busy.
+     */
+    Gna2AccelerationModeHardwareWithSoftwareFallback = 7,
 };
 
 /**
@@ -212,6 +221,8 @@ enum Gna2AccelerationMode
  @param requestConfigId Identifier of affected request configuration.
  @param accelerationMode Acceleration mode used for processing.
  @return Status of the operation.
+    @retval Gna2StatusAccelerationModeNotSupported when mode is not available or invalid.
+    @retval Gna2StatusIdentifierInvalid in case of invalid requestConfigId.
  */
 GNA2_API enum Gna2Status Gna2RequestConfigSetAccelerationMode(
     uint32_t requestConfigId,

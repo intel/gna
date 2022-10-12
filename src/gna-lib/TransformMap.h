@@ -1,15 +1,12 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "GnaException.h"
 #include "OperationConfig.h"
-
-#include "common.h"
-#include "gna-api-status.h"
 
 #include <algorithm>
 #include <memory>
@@ -32,7 +29,7 @@ public:
         const OperationConfig& operationConfig);
 
     template<typename TransformFunction = BaseTransform>
-    TransformFunction * Get(TransformOperation operation) const
+    TransformFunction * GetOptional(TransformOperation operation) const
     {
         try
         {
@@ -45,6 +42,14 @@ public:
         }
         // finally:
         return nullptr;
+    }
+
+    template<typename TransformFunction = BaseTransform>
+    TransformFunction & Get(TransformOperation operation) const
+    {
+        auto * transform = GetOptional<TransformFunction>(operation);
+        Expect::NotNull(transform, Gna2StatusXnnErrorLyrCfg);
+        return *(static_cast<TransformFunction *>(transform));
     }
 
 private:

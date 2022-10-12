@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "LayerDescriptor.h"
 
@@ -9,23 +9,18 @@
 #include "PoolingKernelArguments.h"
 #include "ThresholdParameters.h"
 
-#include "gna-api-types-gmm.h"
-
 using namespace GNA;
 
 uint32_t LayerDescriptor::getSize(const DeviceVersion deviceVersion)
 {
     static const std::map<const DeviceVersion, const uint32_t> sizeMap =
     {
-
         {Gna2DeviceVersion0_9, 128},
         {Gna2DeviceVersion1_0, 128},
         {Gna2DeviceVersion2_0, 128},
-        {Gna2DeviceVersionFromInt(0x30), 128},
+        {Gna2DeviceVersion3_0, 128},
         {Gna2DeviceVersionEmbedded1_0, 128},
-        {Gna2DeviceVersionFromInt(0x20E), 128},
-        {Gna2DeviceVersionFromInt(0x30E), 128},
-        {Gna2DeviceVersionFromInt(0x31E), 128},
+        {Gna2DeviceVersionEmbedded3_1, 128},
     };
     return sizeMap.at(deviceVersion);
 }
@@ -70,21 +65,20 @@ static const std::map<const GmmParameterType, const XnnParameter> GmmDescriptorG
     { gmmscrlen, {0x7c, 4}},
 };
 
-
 static const std::map<const XnnParameterType, const XnnParameter> XnnDescriptorGNA_1 =
 {
     { op,{ 0x00, 1 }},
     {flags, { 0x01, 1 }},
     {act_fn_precision, { 0x01, 1, 2, 1,
         {
-            {GNA_DATA_ACTIVATION_DISABLED, static_cast<uint8_t>(0)},
-            {GNA_INT32, static_cast<uint8_t>(0)},
-            {GNA_INT16, static_cast<uint8_t>(1)},
+            {Gna2DataTypeNone, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt32, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt16, static_cast<uint8_t>(1)},
         }}},
     {weight_size, { 0x01, 1, 0, 2,
         {
-            {GNA_INT8, static_cast<uint8_t>(1)},
-            {GNA_INT16, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt8, static_cast<uint8_t>(1)},
+            {Gna2DataTypeInt16, static_cast<uint8_t>(0)},
         }}},
     {pool_param, { 0x01, 1, 3, 2,
          {
@@ -130,29 +124,28 @@ static const std::map<const XnnParameterType, const XnnParameter> XnnDescriptorG
     {pwl_seg_def_buffer, { 0x3c, 4 }},
 };
 
-
 static const std::map<const XnnParameterType, const XnnParameter> XnnDescriptorGNA_3 =
 {
     {op, { 0x00, 1 }},
     {flags, { 0x01, 1 }},
     {act_fn_precision, { 0x01, 1, 4, 2,
         {
-            {GNA_DATA_ACTIVATION_DISABLED, static_cast<uint8_t>(0)},
-            {GNA_INT8, static_cast<uint8_t>(1)},
-            {GNA_INT16, static_cast<uint8_t>(2)},
-            {GNA_INT32, static_cast<uint8_t>(3)}
+            {Gna2DataTypeNone, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt8, static_cast<uint8_t>(1)},
+            {Gna2DataTypeInt16, static_cast<uint8_t>(2)},
+            {Gna2DataTypeInt32, static_cast<uint8_t>(3)}
         }}},
     {input_element_precision, { 0x01, 1, 2, 2,
         {
-            {GNA_DATA_DISABLED, static_cast<uint8_t>(0)},
-            {GNA_INT8, static_cast<uint8_t>(1)},
-            {GNA_INT16, static_cast<uint8_t>(2)},
+            {Gna2DataTypeNone, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt8, static_cast<uint8_t>(1)},
+            {Gna2DataTypeInt16, static_cast<uint8_t>(2)},
         }}},
     {weight_size, { 0x01, 1, 0, 2,
         {
-            {GNA_DATA_CONSTANT_SCALAR, static_cast<uint8_t>(0)},
-            {GNA_INT8, static_cast<uint8_t>(1)},
-            {GNA_INT16, static_cast<uint8_t>(2)}
+            {Gna2DataTypeNone, static_cast<uint8_t>(0)},
+            {Gna2DataTypeInt8, static_cast<uint8_t>(1)},
+            {Gna2DataTypeInt16, static_cast<uint8_t>(2)}
         }}},
     {n_in_elems, { 0x02, 2 }},
     {n_out_elems, { 0x04, 2 }},
@@ -167,17 +160,26 @@ static const std::map<const XnnParameterType, const XnnParameter> XnnDescriptorG
     {cnn_pool_size, { 0x0a, 1 }},
     {bias_precision, { 0x0b, 1, 0, 3,
                          {
-                             {GNA_DATA_DISABLED, static_cast<uint8_t>(0) },
-                             {GNA_DATA_CONSTANT_SCALAR, static_cast<uint8_t>(0) },
-                             {GNA_INT8, static_cast<uint8_t>(1) },
-                             {GNA_INT16, static_cast<uint8_t>(2) },
-                             {GNA_INT32, static_cast<uint8_t>(3) },
-                             {GNA_DATA_RICH_FORMAT, static_cast<uint8_t>(7) },
+                             {Gna2DataTypeNone, static_cast<uint8_t>(0) },
+                             {Gna2DataTypeInt8, static_cast<uint8_t>(1) },
+                             {Gna2DataTypeInt16, static_cast<uint8_t>(2) },
+                             {Gna2DataTypeInt32, static_cast<uint8_t>(3) },
+                             {Gna2DataTypeCompoundBias, static_cast<uint8_t>(7) },
         }}},
     { th_bias_src, {0x0b, 1, 3, 1,
         {
-                          { ThresholdBiasSourceDefault, static_cast<uint8_t>(0) },
-                          { ThresholdBiasSourceExternal, static_cast<uint8_t>(1) },
+                          { ThresholdSourceDefault, static_cast<uint8_t>(0) },
+                          { ThresholdSourceExternal, static_cast<uint8_t>(1) },
+        }}},
+    { th_input_src, {0x01, 1, 6, 1,
+    {
+                      { ThresholdSourceDefault, static_cast<uint8_t>(0) },
+                      { ThresholdSourceExternal, static_cast<uint8_t>(1) },
+        }}},
+    { th_output_src, {0x01, 1, 7, 1,
+    {
+                      { ThresholdSourceDefault, static_cast<uint8_t>(0) },
+                      { ThresholdSourceExternal, static_cast<uint8_t>(1) },
         }}},
     { th_int_mask, {0x0b, 1, 4, 1,
         {
@@ -189,7 +191,7 @@ static const std::map<const XnnParameterType, const XnnParameter> XnnDescriptorG
                           { ThresholdOperationStop, static_cast<uint8_t>(0) },
                           { ThresholdOperationContinueIfMet, static_cast<uint8_t>(1) },
                           { ThresholdOperationContinueIfNotMet, static_cast<uint8_t>(2) },
-                          { ThresholdOperationContinueAllways, static_cast<uint8_t>(3) },
+                          { ThresholdOperationContinueAlways, static_cast<uint8_t>(3) },
         }}},
     { th_cond, {0x0b, 1, 7, 1,
         {
@@ -266,11 +268,9 @@ const std::map<const XnnParameterType, const XnnParameter>& LayerDescriptor::get
         {Gna2DeviceVersion0_9, XnnDescriptorGNA_1},
         {Gna2DeviceVersion1_0, XnnDescriptorGNA_1},
         {Gna2DeviceVersion2_0, XnnDescriptorGNA_1},
-        {Gna2DeviceVersionFromInt(0x30), XnnDescriptorGNA_3},
+        {Gna2DeviceVersion3_0, XnnDescriptorGNA_3},
         {Gna2DeviceVersionEmbedded1_0, XnnDescriptorGNA_1},
-        {Gna2DeviceVersionFromInt(0x20E), XnnDescriptorGNA_1},
-        {Gna2DeviceVersionFromInt(0x30E), XnnDescriptorGNA_3},
-        {Gna2DeviceVersionFromInt(0x31E), XnnDescriptorGNA_3},
+        {Gna2DeviceVersionEmbedded3_1, XnnDescriptorGNA_3},
     };
     return parameterMap.at(deviceVersion);
 }

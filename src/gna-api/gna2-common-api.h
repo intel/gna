@@ -1,11 +1,11 @@
 /**
- @copyright (C) 2020-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 /**************************************************************************//**
  @file gna2-common-api.h
- @brief Gaussian and Neural Accelerator (GNA) 2.0 API Definition.
+ @brief Gaussian and Neural Accelerator (GNA) 3.0 API Definition.
  @nosubgrouping
 
  ******************************************************************************
@@ -24,7 +24,7 @@
 #ifndef __GNA2_COMMON_API_H
 #define __GNA2_COMMON_API_H
 
-#include <stdint.h>
+#include <cstdint>
 #include <stdbool.h>
 
  /**
@@ -77,12 +77,8 @@
  properties e.g. frequency, bandwidth.
 
  @note
- ::Gna2DeviceVersion2_0 is used by default by GNA Library (current version) in software mode,
+ ::Gna2DeviceVersion3_0 is used by default by GNA Library (current version) in software mode,
  when no hardware device is available.
-
- @see
- Gna2RequestConfigEnableHardwareConsistency() to change hardware device
- version in software mode.
 
  @see Gna2DeviceGeneration
  */
@@ -113,16 +109,26 @@ enum Gna2DeviceVersion
     Gna2DeviceVersion2_0 = 0x20,
 
     /**
+     GNA 3.0 device.
+     A ::Gna2DeviceGeneration3_0 generation device.
+     */
+    Gna2DeviceVersion3_0 = 0x30,
+
+    /**
      GNA 1.0 embedded device.
      A ::Gna2DeviceGeneration1_0 generation device.
      */
     Gna2DeviceVersionEmbedded1_0 = 0x10E,
 
     /**
+     GNA 3.1 embedded device on PCH/ACE.
+     A ::Gna2DeviceGeneration3_1 generation device.
+     */
+    Gna2DeviceVersionEmbedded3_1 = 0x310E,
+
+    /**
      Value indicating no supported hardware device available.
      Software emulation (fall-back) will be used.
-
-     @see Gna2RequestConfigEnableHardwareConsistency().
      */
     Gna2DeviceVersionSoftwareEmulation = GNA2_DEFAULT,
 };
@@ -149,6 +155,12 @@ enum Gna2Status
      An arithmetic operation has resulted in saturation during calculation.
      */
     Gna2StatusWarningArithmeticSaturation = 2,
+
+    /**
+     Warning: Model error is not available.
+     Model error was not reported or was already retrieved by Gna2ModelGetLastError().
+     */
+    Gna2StatusModelErrorUnavailable = 3,
 
     /**
      Error: Unknown error occurred.
@@ -290,7 +302,6 @@ enum Gna2Status
      Error: Number is not a multiple of given number
     */
     Gna2StatusNotMultipleOf = -30,
-
     Gna2StatusBadFeatLength = -31,
     Gna2StatusDataModeInvalid = -32,
     Gna2StatusXnnErrorNetLyrNo = -33,
@@ -374,7 +385,8 @@ GNA2_API inline bool Gna2StatusIsSuccessful(const enum Gna2Status status)
 {
     return Gna2StatusSuccess == status
         || Gna2StatusWarningArithmeticSaturation == status
-        || Gna2StatusWarningDeviceBusy == status;
+        || Gna2StatusWarningDeviceBusy == status
+        || Gna2StatusModelErrorUnavailable == status;
 }
 
 /**

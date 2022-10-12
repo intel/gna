@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -38,33 +38,21 @@ public:
         const OperationConfig& operationConfig);
 
     RecurrentFunction(const BaseTransformConfig<RecurrentKernel>& config,
-        std::unique_ptr<const PwlCached> pwl,
         TransformOperation operation, uint32_t delay,
         std::unique_ptr<const WeightTensor> weights,
-        std::unique_ptr<const BiasTensor> biases);
+        std::unique_ptr<const BiasTensor> biases,
+        std::unique_ptr<ActivationFunction> activation);
 
     virtual ~RecurrentFunction() = default;
 
     const BaseAddress CalculateFeedbackBuffer(const BaseAddress& outputBuffer) const;
 
     const ActivationFunction& GetActivationFunction() const;
-    void SetActivationFunction(std::unique_ptr<ActivationFunction> activation);
 
     virtual Tensor const & GetOperand(uint32_t operandIndex) const override;
 
     std::unique_ptr<const WeightTensor> Weights;
     std::unique_ptr<const BiasTensor> Biases;
-
-protected:
-    static const ShapeLimits outputDimensionsLimits;
-
-    static const DataModeLimits outputModeLimits_0_9;
-
-    static const TensorLimits outputLimits_0_9;
-
-    static const DataModeLimits outputModeLimits_3;
-
-    static const TensorLimits outputLimits_3;
 
 private:
     static const FullCapabilitiesMap outputCapabilities;
@@ -74,13 +62,10 @@ private:
             std::unique_ptr<BaseConfig> configs[TransformOperationCount],
             const BufferMap& buffers) const override;
 
-    static void ValidateActivation(const Gna2Tensor& activationTensor);
     void ValidateFeedbackDelay() const;
 
     const uint32_t FeedbackDelay;
 
-    const std::unique_ptr<const PwlCached> pwl;
-    const ActivationConfig activationConfig;
     std::unique_ptr<ActivationFunction> Activation;
 };
 

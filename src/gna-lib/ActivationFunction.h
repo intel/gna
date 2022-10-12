@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -10,9 +10,6 @@
 #include "Tensor.h"
 #include "Transform.h"
 #include "XnnKernel.h"
-
-#include "common.h"
-#include "gna-api-types-xnn.h"
 #include "pwl.h"
 
 #include <cstdint>
@@ -32,7 +29,7 @@ public:
         uint32_t outputCount) const;
 
     ActivationFunction(const BaseTransformConfig<ActivationKernel>& config,
-        DataMode mode, std::unique_ptr<Tensor> pwl);
+        const DataMode& mode, std::unique_ptr<Tensor> pwl);
     ActivationFunction() = delete;
     virtual ~ActivationFunction() = default;
 
@@ -41,11 +38,14 @@ public:
     void ValidateActiveList(ActiveList const & activeList) const override;
 
     std::unique_ptr<Tensor> Segments;
-    PwlCached const Pwl;
+    std::unique_ptr<PwlCached const> Pwl;
+
+    /** Number of pwl segments constraint - max  */
+    static constexpr auto ActivationFunctionSegmentCountMax = uint32_t{ 128 };
 
 protected:
-    static PwlCached createPwlCached(const gna_data_mode mode,
-        nn_pwl_seg const * const segmentsIn, uint32_t segmentCountIn);
+    static std::unique_ptr<PwlCached const> createPwlCached(uint32_t elementSize,
+        PwlSegment const * segmentsIn, uint32_t segmentCountIn);
 
     virtual void updateExecutionKernelConfig(ExecutionKernelConfig<ActivationConfig> & config)
         const override

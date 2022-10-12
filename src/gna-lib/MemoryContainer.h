@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -16,20 +16,16 @@ namespace GNA
 
 class Memory;
 
-class MemoryContainerElement
+class MemoryContainerElement : protected std::reference_wrapper<Memory const>
 {
 public:
     MemoryContainerElement(Memory const& memoryIn, uint32_t notAlignedIn, uint32_t pageAlignedIn);
-    operator Memory const & () const;
-    void * GetBuffer() const;
-    uint32_t GetSize() const;
-    uint32_t GetNotAligned() const;
-    uint32_t GetPageAligned() const;
-    void ResetOffsets(uint32_t notAlignedIn, uint32_t pageAlignedIn);
-private:
-    std::reference_wrapper<Memory const> memory;
-    uint32_t notAligned;
-    uint32_t pageAligned;
+
+    using std::reference_wrapper<Memory const>::operator const type&;
+    Memory const& get() const;
+
+    const uint32_t NotAligned;
+    const uint32_t PageAligned;
 };
 
 using MemoryContainerType = std::vector< MemoryContainerElement >;
@@ -43,7 +39,7 @@ public:
 
     const_iterator FindByAddress(BaseAddress const & address) const;
 
-    bool Contains(const void *buffer, const size_t bufferSize) const;
+    bool Contains(const void *buffer, const size_t bufferSize = 1) const;
 
     uint32_t GetMemorySize() const
     {
@@ -62,11 +58,7 @@ public:
 
     void CopyData(void * destination, size_t destinationSize) const;
 
-    void WriteData(FILE *file) const;
-
 protected:
-    void invalidateOffsets();
-
     uint32_t totalMemorySizeAlignedToPage = 0;
 
     uint32_t totalMemorySize = 0;

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2017-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -11,7 +11,6 @@
 #include "Logger.h"
 #include "ModelError.h"
 
-#include "gna-api.h"
 
 #include <cstdint>
 #include <memory>
@@ -45,21 +44,20 @@ public:
     }
 
     SoftwareModel(const Gna2Model& model,
-        BaseValidator validator,
-        const std::vector<Gna2AccelerationMode>& supportedCpuAccelerations);
+        BaseValidator const && softwareOnlyValidator,
+        const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn);
+
+    SoftwareModel(const Gna2Model& model,
+        BaseValidator const && softwareOnlyValidator,
+        BaseValidator const && hwConsistentValidator,
+        const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn,
+        const std::vector<std::unique_ptr<SubModel>>& subModels);
 
     SoftwareModel(const SoftwareModel &) = delete;
     SoftwareModel& operator=(const SoftwareModel&) = delete;
     virtual ~SoftwareModel() = default;
 
-    virtual uint32_t Score(
-        uint32_t layerIndex,
-        uint32_t layerCountIn,
-        RequestConfiguration const &requestConfiguration,
-        RequestProfiler *profiler,
-        KernelBuffers *fvBuffers) override;
-
-    void validateConfiguration(const RequestConfiguration& configuration) const;
+    void Score(ScoreContext & context) override;
 
     uint32_t GetMaximumOperandSize(uint32_t operandIndex);
 
@@ -70,39 +68,21 @@ public:
         return layers;
     }
 
-private:
-    template<class T>
-    void build(const T* const operations, const BaseValidator & validator)
+    auto const & GetBufferConfigValidator() const
     {
-        maximumOperandSizes.emplace(ScratchpadOperandIndex, 0);
-        maximumOperandSizes.emplace(SoftwareScratchpadOperandIndex, 0);
-
-        for (auto i = uint32_t{ 0 }; i < layerCount; i++)
-        {
-            try
-            {
-                auto layer = Layer::Create(operations[i], validator);
-                buildSingleLayer(layer);
-            }
-            catch (GnaModelErrorException& e)
-            {
-                e.SetLayerIndex(i);
-                throw;
-            }
-            catch (const GnaException& e)
-            {
-                throw GnaModelErrorException(i, e.GetStatus());
-            }
-            catch (...)
-            {
-                throw GnaModelErrorException(i);
-            }
-        }
+        return bufferConfigValidator;
     }
 
-    void buildSingleLayer(std::unique_ptr<Layer> & layer);
+private:
+    SoftwareModel(const Gna2Model& model,
+        const std::vector<Gna2AccelerationMode>& supportedCpuAccelerationsIn);
 
-    void CheckModel(uint32_t declaredBatchSize, void * operationPointer) const;
+    void build(const Gna2Operation* operations,
+        const BaseValidator & softwareOnlyValidator,
+        const BaseValidator & hwConsistentValidator,
+        const std::vector<std::unique_ptr<SubModel>>& subModels);
+
+    void buildSingleLayer(std::unique_ptr<Layer> & layer);
 
     uint32_t FindMaximumOperandSize(uint32_t operandIndex) const;
 
@@ -116,6 +96,8 @@ private:
     const std::vector<Gna2AccelerationMode>& supportedCpuAccelerations;
 
     std::map<uint32_t /* operandIndex */, uint32_t> maximumOperandSizes;
+
+    BufferConfigValidator bufferConfigValidator;
 };
 
 struct InferenceConfig
@@ -138,12 +120,13 @@ private:
     ExecutionConfig& getNormal(Layer const & layer) const;
     ExecutionConfig& getFor3_0Fix(Layer const & layer) const;
 
-    // if 3.0 consistency is active
+    // if ADL consistency is active
     bool has3_0Consistency = false;
 
     // config for usual inference request
     std::unique_ptr<ExecutionConfig> executionConfig;
 
+    // config for inference request for ADL
     std::unique_ptr<ExecutionConfig> executionConfig3_0;
 };
 

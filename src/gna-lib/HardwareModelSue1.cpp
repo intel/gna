@@ -1,13 +1,14 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2018-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "HardwareModelSue1.h"
 
 #include "AffineLayers.h"
 #include "CompiledModel.h"
 #include "GnaException.h"
+#include "gna2-memory-impl.h"
 #include "HardwareLayer.h"
 #include "LayerDescriptor.h"
 #include "Layer.h"
@@ -18,10 +19,8 @@
 using namespace GNA;
 
 
-HardwareCapabilities HardwareModelSue1::sueCapabilities = HardwareCapabilities{ Gna2DeviceVersionFromInt(0x10E) };
-
 HardwareModelSue1::HardwareModelSue1(CompiledModel const & softwareModel, Gna2UserAllocator customAllocIn) :
-    HardwareModel(softwareModel, sueCapabilities),
+    HardwareModel(softwareModel, GetHwCaps()),
     customAlloc{ customAllocIn }
 {
 }
@@ -45,30 +44,19 @@ uint32_t HardwareModelSue1::GetInputOffset(uint32_t layerIndex) const
 
 void HardwareModelSue1::prepareAllocationsAndModel()
 {
-    Expect::InRange(model.LayerCount, ui32_1, hwCapabilities.GetMaximumLayerCount(),
-        Gna2StatusXnnErrorNetLyrNo);
+    hwCapabilities.ValidateOperationCount(model.LayerCount);
 
-    auto const ldMemorySize = RoundUp(calculateDescriptorSize(false), PAGE_SIZE);
+    auto const ldMemorySize = RoundUp(calculateDescriptorSize(false), MemoryBufferAlignment);
 
-    uint32_t scratchPadSize = 0;
-    for (auto const & layer : model.GetLayers())
-    {
-        auto const scratchPad = layer->TryGetOperand(ScratchpadOperandIndex);
-        if (scratchPad)
-        {
-            scratchPadSize = (std::max)(scratchPadSize, scratchPad->Size);
-        }
-    }
-    scratchPadSize = RoundUp(scratchPadSize, Memory::GNA_BUFFER_ALIGNMENT);
-
+    auto const scratchPadSize = model.GetScratchpadSize();
     auto const rw = model.GetAllocations()[0];
-    totalModelSize = ldMemorySize + rw.GetSize() + scratchPadSize;
+    totalModelSize = ldMemorySize + rw.get().GetSize() + scratchPadSize;
 
     MemoryContainerElement const * ro = nullptr;
     if (model.GetAllocations().size() >= 3)
     {
         ro = &model.GetAllocations()[1];
-        totalModelSize += ro->GetSize();
+        totalModelSize += (*ro).get().GetSize();
     }
 
     exportMemory = customAlloc(totalModelSize);
@@ -89,12 +77,9 @@ void HardwareModelSue1::prepareAllocationsAndModel()
 
     if (scratchPadSize > 0)
     {
-        scratchPadMemory = std::make_unique<Memory>(
-            static_cast<uint8_t*>(exportMemory) + allocations.GetMemorySize(), scratchPadSize);
-        if (!scratchPadMemory)
-        {
-            throw GnaException{ Gna2StatusResourceAllocationError };
-        }
+        createScratchPadMemory(
+            static_cast<uint8_t*>(exportMemory) + allocations.GetMemorySize(),
+            scratchPadSize);
         allocations.Emplace(*scratchPadMemory);
     }
 
@@ -104,11 +89,18 @@ void HardwareModelSue1::prepareAllocationsAndModel()
     }
 
     Expect::InRange(totalModelSize, static_cast<uint32_t>(2 * 1024 * 1024),
-                    Gna2StatusMemoryTotalSizeExceeded);
+        Gna2StatusMemoryTotalSizeExceeded);
     getHwOffsetFunction = [this](const BaseAddress& buffer) { return GetBufferOffset(buffer); };
 }
 
-uint32_t HardwareModelSue1::GetBufferOffset(const BaseAddress& address) const
+const HardwareCapabilities& HardwareModelSue1::GetHwCaps()
+{
+    static const auto caps =
+        std::make_unique<HardwareCapabilitiesExport>(Gna2DeviceVersionEmbedded1_0);
+    return *caps;
+}
+
+LdaOffset HardwareModelSue1::GetBufferOffset(const BaseAddress& address) const
 {
     if (address == AffineBaseLayer::GetGlobal2MBScratchpad())
     {
@@ -119,18 +111,18 @@ uint32_t HardwareModelSue1::GetBufferOffset(const BaseAddress& address) const
 
 void * HardwareModelSue1::Export()
 {
-    Build({});
+    Build();
 
     // copying data..
     auto const & rw = allocations[1];
     auto const & ro = allocations.back();
     void * destination = static_cast<uint8_t*>(exportMemory) + ldMemory->GetSize();
-    memcpy_s(destination, totalModelSize, rw.GetBuffer(), rw.GetSize());
+    memcpy_s(destination, totalModelSize, rw.get().GetBuffer(), rw.get().GetSize());
     if (allocations.size() >= 3)
     {
-        auto const roSize = ro.GetSize();
+        auto const roSize = ro.get().GetSize();
         destination = static_cast<uint8_t*>(exportMemory) + totalModelSize - roSize;
-        memcpy_s(destination, totalModelSize, ro.GetBuffer(), roSize);
+        memcpy_s(destination, totalModelSize, ro.get().GetBuffer(), roSize);
     }
 
     return exportMemory;

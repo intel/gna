@@ -1,13 +1,12 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gna2-model-export-impl.h"
 
 #include "ApiWrapper.h"
 #include "Device.h"
-#include "DeviceManager.h"
 #include "ModelExportConfig.h"
 
 #include "gna2-common-impl.h"
@@ -19,7 +18,7 @@ GNA2_API enum Gna2Status Gna2ModelExportConfigCreate(
 {
     const std::function<ApiStatus()> command = [&]()
     {
-        Expect::NotNull((void*)userAllocator);
+        Expect::NotNull(userAllocator);
         Expect::NotNull(exportConfigId);
         *exportConfigId = ModelExportManager::Get().AddConfig(userAllocator);
         return Gna2StatusSuccess;
@@ -75,6 +74,17 @@ GNA2_API enum Gna2Status Gna2ModelExport(
     {
         auto& config = ModelExportManager::Get().GetConfig(exportConfigId);
         config.Export(componentType, exportBuffer, exportBufferSize);
+        return Gna2StatusSuccess;
+    };
+    return ApiWrapper::ExecuteSafely(command);
+}
+
+GNA2_API enum Gna2Status Gna2ModelOverrideAlignment(
+    uint32_t newAlignment)
+{
+    const std::function<ApiStatus()> command = [&]()
+    {
+        TensorLimits::OverrideAlign(newAlignment);
         return Gna2StatusSuccess;
     };
     return ApiWrapper::ExecuteSafely(command);

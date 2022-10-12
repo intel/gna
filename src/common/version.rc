@@ -1,7 +1,5 @@
-/**
- @copyright (C) 2017-2020 Intel Corporation
- SPDX-License-Identifier: LGPL-2.1-or-later
- */
+// Copyright (C) 2017-2022 Intel Corporation
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #include "resource.h"
 #include "verrsrc.h"
@@ -20,7 +18,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #define OWNFILEDESC     PRODUCT_NAME ", Dynamic-link library (" GNA_TARGET_DESCRIPTION ")"
 
 VS_VERSION_INFO         VERSIONINFO
-FILEVERSION             VERSION_FILE_ID
+FILEVERSION             PRODUCT_VERSION_ID
 PRODUCTVERSION          PRODUCT_VERSION_ID
 FILEFLAGSMASK           0x0L
 FILEFLAGS               OWNFILEFLAGS
@@ -34,7 +32,7 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Intel Corporation"
             VALUE "FileDescription",  OWNFILEDESC
-            VALUE "FileVersion",      VERSION_FILE_STR
+            VALUE "FileVersion",      PRODUCT_VERSION_STR
             VALUE "InternalName",     OWNFILEDESC
             VALUE "LegalCopyright",   PRODUCT_COPYRIGHT
             VALUE "ProductName",      PRODUCT_NAME_LONG

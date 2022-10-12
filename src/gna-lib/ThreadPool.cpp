@@ -1,24 +1,23 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "ThreadPool.h"
 
+#include "ConvolutionalLayer2DCapabilities.h"
 #include "Expect.h"
 #include "GnaException.h"
+#include "Logger.h"
+#include "Memory.h"
 #include "Request.h"
-
 #include "KernelArguments.h"
-
-#include "common.h"
-#include "gna-api-status.h"
-#include "gna-api-types-xnn.h"
 
 #include <cstring>
 #include <cstdint>
 
 using namespace GNA;
+using CnnCaps = GNA::ConvolutionalLayer2DCapabilities;
 
 // will set memory only in DEBUG configuration
 template<typename M, typename S>
@@ -49,7 +48,7 @@ KernelBuffers::KernelBuffers()
     d6 = d5 + UINT16_MAX + 1;
     d7 = d6 + UINT16_MAX + 1;
 
-    auto const poolSize = CNN_POOL_SIZE_MAX * CNN_N_FLT_MAX * sizeof(int64_t);
+    auto const poolSize = CnnCaps::PoolingWindowSizeMax * CnnCaps::Filter1DCountMax * sizeof(int64_t);
     pool = static_cast<int64_t *>(_kernel_malloc(poolSize));
     if (nullptr == pool)
     {
@@ -100,17 +99,23 @@ void KernelBuffers::ReallocateCnnScratchPad(uint32_t cnnScratchSize)
     }
 }
 
-ThreadPool::ThreadPool(uint32_t threadCount) :
-    buffers{ threadCount },
-    numberOfThreads{ threadCount }
+ThreadPool::ThreadPool() :
+    buffers{ 1 },
+    numberOfThreads{ 1 }
 {
-    Expect::InRange(threadCount, 1U, 127U, Gna2StatusDeviceNumberOfThreadsInvalid);
     employWorkers();
 }
 
 ThreadPool::~ThreadPool()
 {
-    StopAndJoin();
+    try
+    {
+        StopAndJoin();
+    }
+    catch (...)
+    {
+        Log->Error("StopAndJoin failed.\n");
+    }
 }
 
 uint32_t ThreadPool::GetNumberOfThreads() const

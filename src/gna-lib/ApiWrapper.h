@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #ifndef __GNA2_API_WRAPPER_H
 #define __GNA2_API_WRAPPER_H
@@ -34,6 +34,8 @@ public:
             return ReturnError<ReturnType>(error...);
         }
     }
+
+    static inline Gna2Status HandleAndLogExceptions();
 
 private:
     template<typename ReturnType, typename... ErrorValueType>
@@ -77,6 +79,24 @@ inline Gna2Status ApiWrapper::ExecuteSafely(const std::function<Gna2Status()>& c
     try
     {
         return command();
+    }
+    catch (const GnaException &e)
+    {
+        LogException(e);
+        return e.GetStatus();
+    }
+    catch (const std::exception& e)
+    {
+        LogException(e);
+        return Gna2StatusUnknownError;
+    }
+}
+
+Gna2Status ApiWrapper::HandleAndLogExceptions()
+{
+    try
+    {
+        throw;
     }
     catch (const GnaException &e)
     {

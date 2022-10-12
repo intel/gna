@@ -1,24 +1,18 @@
 /**
- @copyright (C) 2018-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
 #include "AccelerationDetector.h"
-#include "HardwareModelScorable.h"
 #include "MemoryContainer.h"
 #include "SoftwareModel.h"
-#include "SubModel.h"
 #include "Validator.h"
 
+#include "gna2-capability-impl.h"
 #include "gna2-common-api.h"
-#include "gna2-common-impl.h"
 #include "gna2-model-api.h"
-
-#include "common.h"
-#include "gna-api.h"
-#include "gna-api-types-xnn.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -29,128 +23,95 @@ struct KernelBuffers;
 
 namespace GNA
 {
-class DriverInterface;
 class HardwareCapabilities;
 class Layer;
 class Memory;
 class RequestConfiguration;
-struct LayerConfiguration;
 class RequestProfiler;
 
 class CompiledModel
 {
 public:
-    template<class T>
-    CompiledModel(
-        const T & model,
-        const AccelerationDetector& detectorIn,
-        const HardwareCapabilities& hwCapabilitiesIn) :
-        LayerCount{ GetNumberOfOperations(model) },
-        GmmCount{ getGmmCount(GetFirstOperation(model), LayerCount) },
-        detector{ detectorIn },
-        hwCapabilities{ hwCapabilitiesIn },
-        softwareModel
-    {
-        model,
-        makeValidator(),
-        detector.GetSupportedCpuAccelerations()
-    }
-    {}
-
     virtual ~CompiledModel() = default;
-    CompiledModel(const CompiledModel &) = delete;
+    CompiledModel(const CompiledModel&) = delete;
+    CompiledModel(CompiledModel&&) = delete;
     CompiledModel& operator=(const CompiledModel&) = delete;
-
-    void BuildHardwareModel(DriverInterface &ddi);
+    CompiledModel& operator=(CompiledModel&&) = delete;
 
     std::vector<std::unique_ptr<Layer>> const & GetLayers() const
     {
-        return softwareModel.GetLayers();
+        return GetSoftwareModel().GetLayers();
     }
+
+    uint32_t GetScratchpadSize() const;
 
     Layer const & GetLayer(uint32_t layerIndex) const
     {
-        return softwareModel.GetLayer(layerIndex);
+        return GetSoftwareModel().GetLayer(layerIndex);
     }
 
     uint32_t GetMaximumOperandSize(uint32_t operandIndex);
 
-    void VerifyBufferAndStoreMemory(const void *buffer, size_t bufferSize);
+    void VerifyBufferAndStoreMemory(const void *buffer, size_t bufferSize, uint32_t alignment);
 
     uint32_t GetSize() const
     {
         return allocations.GetMemorySize();
     }
 
-    void CopyData(void *address, size_t size) const;
-
-    void InvalidateHardwareRequestConfig(uint32_t configId) const;
-
     Memory const * GetMemoryIfNotPartOfModel(const void *buffer, size_t bufferSize) const;
+
+    auto const & GetBufferConfigValidator() const
+    {
+        return  GetSoftwareModel().GetBufferConfigValidator();
+    }
 
     Gna2Status Score(
         RequestConfiguration& config,
-        RequestProfiler *profiler,
+        RequestProfiler &profiler,
         KernelBuffers *buffers);
-
-    void ValidateBuffer(MemoryContainer const & requestAllocations, Memory const & memory) const;
 
     MemoryContainer const & GetAllocations() const
     {
         return allocations;
     }
 
+    void InvalidateRequestConfig(uint32_t configId) const;
+
+    void ValidateBuffer(MemoryContainer const & requestAllocations, Memory const & memory) const;
+
     bool IsHardwareEnforcedModeValid();
-    bool IsFullyHardwareCompatible(const HardwareCapabilities& targetDevice);
 
     const uint32_t LayerCount;
     const uint32_t GmmCount;
 
 protected:
-    std::unique_ptr<HardwareModelScorable> hardwareModel;
+    CompiledModel(
+        const ApiModel & model,
+        const AccelerationDetector& detectorIn,
+        const HardwareCapabilities& hwCapabilitiesIn,
+        Gna2DeviceVersion softwareModelVersion);
 
-private:
+    BaseValidator makeValidator(Gna2DeviceGeneration generation);
 
-    enum AccelerationType
+    static uint32_t GetNumberOfOperations(const Gna2Model& model, Gna2DeviceVersion softwareModelVersion)
     {
-        Unsupported,
-        Auto,
-        EnforcedSoftware,
-    };
-
-    const std::vector<std::unique_ptr<SubModel>>&
-        getSubmodels(const HardwareCapabilities& hwCaps);
-
-    void createSubmodels(const HardwareCapabilities& hwCaps);
-
-    SubmodelType getSubmodelType(
-        const HardwareCapabilities &hwCaps, uint32_t layerIndex) const;
-
-    AccelerationType getEffectiveAccelerationMode(RequestConfiguration& config);
-
-    uint32_t scoreAllSubModels(RequestConfiguration& config,
-        RequestProfiler *profiler, KernelBuffers *buffers);
-
-    BaseValidator makeValidator();
-    static uint32_t GetNumberOfOperations(const Gna2Model& model)
-    {
+        HardwareCapabilities::ValidateOperationCount(model.NumberOfOperations, softwareModelVersion);
         return model.NumberOfOperations;
     }
+
     static Gna2Operation* GetFirstOperation(const Gna2Model& model)
     {
         return model.Operations;
     }
-    static bool isGmmOperation(const nn_layer& layer)
-    {
-        return layer.operation == INTEL_GMM;
-    }
+
     static bool isGmmOperation(const Gna2Operation& operation)
     {
         return operation.Type == Gna2OperationTypeGmm;
     }
 
     template<class T>
-    uint32_t getGmmCount(const T* firstOperation, uint32_t numberOfOperations)
+    static uint32_t getGmmCount(const T* firstOperation, uint32_t numberOfOperations)
     {
         uint32_t gmmCount = 0;
         for (uint32_t i = 0; i < numberOfOperations; i++)
@@ -163,15 +124,39 @@ private:
         return gmmCount;
     }
 
-    Memory const & getMemoryFromDeviceAllocations(const void *buffer, const size_t bufferSize) const;
+    Memory const & getMemoryFromDeviceAllocations(const void *buffer, size_t bufferSize) const;
 
     const AccelerationDetector& detector;
-    const HardwareCapabilities& hwCapabilities;
-    MemoryContainer allocations;
-    SoftwareModel softwareModel;
-    std::map<DeviceVersion,
-        std::vector<std::unique_ptr<SubModel>>> submodels;
 
+    const HardwareCapabilities& hwCapabilities;
+
+    MemoryContainer allocations;
+
+    const ApiModel & apiModel;
+
+    virtual SoftwareModel & GetSoftwareModel()
+    {
+        return softwareModel;
+    }
+
+    virtual SoftwareModel const & GetSoftwareModel() const
+    {
+        return softwareModel;
+    }
+
+    // Software only model, built with latest/relaxed limitations
+    // used for Software scoring only
+    // not used with hardware model (actually some common properties may be used)
+    SoftwareModel softwareModel;
+
+private:
+    virtual void score(ScoreContext & context) = 0;
+
+    virtual void invalidateRequestConfig(uint32_t configId) const = 0;
+
+    virtual void validateBuffer(MemoryContainer const & requestAllocations, Memory const & memory) const = 0;
+
+    virtual bool isFullyHardwareCompatible() = 0;
 };
 
 }

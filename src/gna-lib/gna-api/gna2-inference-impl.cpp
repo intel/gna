@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "gna2-inference-impl.h"
 
@@ -13,7 +13,7 @@
 
 #include "gna2-common-impl.h"
 
-#include <stdint.h>
+#include <cstdint>
 #include <vector>
 
 
@@ -69,8 +69,7 @@ GNA2_API enum Gna2Status Gna2RequestConfigEnableHardwareConsistency(
     const std::function<ApiStatus()> command = [&]()
     {
         auto& device = DeviceManager::Get().GetDeviceForRequestConfigId(requestConfigId);
-        device.EnableHardwareConsistency(requestConfigId, deviceVersion);
-        return Gna2StatusSuccess;
+        return device.IsVersionConsistent(deviceVersion) ? Gna2StatusSuccess : Gna2StatusDeviceVersionInvalid;
     };
     return ApiWrapper::ExecuteSafely(command);
 }
@@ -125,16 +124,14 @@ GNA2_API enum Gna2Status Gna2RequestWait(
     return ApiWrapper::ExecuteSafely(command);
 }
 
-AccelerationMode::AccelerationMode(Gna2AccelerationMode basicMode, bool hardwareConsistencyEnabled)
-    : hardwareConsistency{ hardwareConsistencyEnabled }
+AccelerationMode::AccelerationMode(Gna2AccelerationMode basicMode)
 {
     SetMode(basicMode);
-    enforceValidity();
 }
 
 bool AccelerationMode::IsHardwareEnforced() const
 {
-    return mode == Gna2AccelerationModeHardware;
+    return mode == Gna2AccelerationModeHardware || mode == Gna2AccelerationModeHardwareWithSoftwareFallback;
 }
 
 bool AccelerationMode::IsSoftwareEnforced() const
@@ -146,6 +143,11 @@ bool AccelerationMode::IsSoftwareEnforced() const
         mode == Gna2AccelerationModeAvx2;
 }
 
+bool AccelerationMode::IsSoftwareFallbackEnabled() const
+{
+    return mode == Gna2AccelerationModeHardwareWithSoftwareFallback;
+}
+
 AccelerationMode AccelerationMode::GetEffectiveSoftwareAccelerationMode(
     const std::vector<Gna2AccelerationMode>& supportedCpuAccelerations) const
 {
@@ -154,16 +156,17 @@ AccelerationMode AccelerationMode::GetEffectiveSoftwareAccelerationMode(
         throw GnaException(Gna2StatusAccelerationModeNotSupported);
     }
     if (mode == Gna2AccelerationModeSoftware ||
-        mode == Gna2AccelerationModeAuto)
+        mode == Gna2AccelerationModeAuto ||
+        IsSoftwareFallbackEnabled())
     {
         //last is fastest
-        return AccelerationMode{ supportedCpuAccelerations.back(), hardwareConsistency };
+        return AccelerationMode{ supportedCpuAccelerations.back() };
     }
     for(const auto& supported: supportedCpuAccelerations)
     {
         if(mode == supported)
         {
-            return AccelerationMode{ supported, hardwareConsistency };
+            return AccelerationMode{ supported };
         }
     }
     throw GnaException(Gna2StatusAccelerationModeNotSupported);
@@ -179,6 +182,7 @@ void AccelerationMode::ExpectValid(Gna2AccelerationMode modeIn)
         Gna2AccelerationModeAvx1,
         Gna2AccelerationModeSse4x2,
         Gna2AccelerationModeGeneric,
+        Gna2AccelerationModeHardwareWithSoftwareFallback,
     };
     Expect::InSet(modeIn, existingModes, Gna2StatusAccelerationModeNotSupported);
 }
@@ -187,23 +191,17 @@ void AccelerationMode::SetMode(Gna2AccelerationMode newMode)
 {
     ExpectValid(newMode);
     mode = newMode;
-    enforceValidity();
 }
 
 static std::map<AccelerationMode, const char*> AccelerationModeNames{
     {AccelerationMode{ Gna2AccelerationModeHardware },"GNA_HW"},
-    {AccelerationMode{ Gna2AccelerationModeAuto,true },"GNA_AUTO_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeAuto,false },"GNA_AUTO_FAST"},
-    {AccelerationMode{ Gna2AccelerationModeSoftware,true },"GNA_SW_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeSoftware,false },"GNA_SW_FAST"},
-    {AccelerationMode{ Gna2AccelerationModeGeneric,true },"GNA_GEN_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeGeneric,false },"GNA_GEN_FAST"},
-    {AccelerationMode{ Gna2AccelerationModeSse4x2,true },"GNA_SSE4_2_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeSse4x2,false },"GNA_SSE4_2_FAST"},
-    {AccelerationMode{ Gna2AccelerationModeAvx1, true },"GNA_AVX1_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeAvx1, false },"GNA_AVX1_FAST"},
-    {AccelerationMode{ Gna2AccelerationModeAvx2,true },"GNA_AVX2_SAT"},
-    {AccelerationMode{ Gna2AccelerationModeAvx2,false },"GNA_AVX2_FAST"},
+    {AccelerationMode{ Gna2AccelerationModeHardwareWithSoftwareFallback },"GNA_HW_SOFTWARE_FALLBACK"},
+    {AccelerationMode{ Gna2AccelerationModeAuto },"GNA_AUTO_SAT"},
+    {AccelerationMode{ Gna2AccelerationModeSoftware },"GNA_SW_SAT"},
+    {AccelerationMode{ Gna2AccelerationModeGeneric },"GNA_GEN_SAT"},
+    {AccelerationMode{ Gna2AccelerationModeSse4x2 },"GNA_SSE4_2_SAT"},
+    {AccelerationMode{ Gna2AccelerationModeAvx1 },"GNA_AVX1_SAT"},
+    {AccelerationMode{ Gna2AccelerationModeAvx2 },"GNA_AVX2_SAT"},
 };
 
 const char* AccelerationMode::UNKNOWN_ACCELERATION_MODE_NAME = "GNA_UNKNOWN_ACCELERATION_MODE";
@@ -218,32 +216,12 @@ const char* AccelerationMode::GetName() const
     return UNKNOWN_ACCELERATION_MODE_NAME;
 }
 
-void AccelerationMode::SetHwConsistency(bool consistencyEnabled)
-{
-    hardwareConsistency = consistencyEnabled;
-    enforceValidity();
-}
-
-bool AccelerationMode::GetHwConsistency() const
-{
-    return hardwareConsistency;
-}
-
-Gna2AccelerationMode GNA::AccelerationMode::GetMode() const
+Gna2AccelerationMode AccelerationMode::GetMode() const
 {
     return mode;
 }
 
-void AccelerationMode::enforceValidity()
-{
-    if (mode == Gna2AccelerationModeHardware)
-    {
-        hardwareConsistency = true;
-    }
-}
-
 bool AccelerationMode::operator<(const AccelerationMode& right) const
 {
-    const auto ret = (mode < right.mode) || ((mode == right.mode) && hardwareConsistency && (!right.hardwareConsistency));
-    return ret;
+    return mode < right.mode;
 }

@@ -1,7 +1,7 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2017-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #pragma once
 
@@ -11,7 +11,16 @@
 
  Driver interface
 
+ @version 3
+ This is GNA 3.0+ DDI version
+
+ @see CTRL_FLAGS::ddiVersion
+
  *****************************************************************************/
+#define GNA_DDI_VERSION_3 3
+
+#define GNA_DDI_VERSION_0 0     // for legacy compatibility
+#define GNA_DDI_VERSION_2 2     // GNA 2.0+ DDI version
 
 /**
  Interface Guid
@@ -49,6 +58,7 @@ DEFINE_GUID(GUID_DEVINTERFACE_GNA_DRV,
 #define GNA_PARAM_HAS_MMU               8
 #define GNA_PARAM_HW_VER                9
 #define GNA_PARAM_QOS_HARD_TIMEOUT_MS   10
+#define GNA_PARAM_DDI_VERSION           11
 
 /**
  Default time in seconds after which driver will try to auto recover
@@ -97,6 +107,9 @@ DEFINE_GUID(GUID_DEVINTERFACE_GNA_DRV,
 // GNA 2.0 Device, full featured GNA 2.0
 #define GNA_HW_2_0 0x20
 
+// GNA 3.0 Device, full featured GNA 3.0
+#define GNA_HW_3_0 0x30
+
 /**
  Calculate Control flags
  */
@@ -107,7 +120,7 @@ typedef struct
 
     // GNA operation mode (0:GMM, 1:xNN)
     UINT32 gnaMode : 2;
-    UINT32 ddiVersion : 21;
+    UINT32 ddiVersion : 21;     // use ::GNA_DDI_VERSION_3
     UINT32 hwPerfEncoding : 8;
     union
     {
@@ -119,6 +132,19 @@ typedef struct
 } CTRL_FLAGS;
 
 static_assert(8 == sizeof(CTRL_FLAGS), "Invalid size of CTRL_FLAGS");
+
+/**
+ Enhanced Control flags
+ @since GNA_DDI_VERSION_3
+ */
+typedef struct
+{
+    UINT32 qosEnabled : 1;
+    UINT32 _reserved : 31;
+
+} ENHANCED_CTRL_FLAGS;
+
+static_assert(4 == sizeof(ENHANCED_CTRL_FLAGS), "Invalid size of ENHANCED_CTRL_FLAGS");
 
 /**
  Accelerator (hardware level) scoring request performance results
@@ -188,7 +214,8 @@ typedef struct _INFERENCE_CONFIG_IN
     // layer base / offset to gmm descriptor
     UINT32 configBase;
 
-    UINT32 _reserved;
+    // @since GNA_DDI_VERSION_3
+    ENHANCED_CTRL_FLAGS enhancedControlFlags;
 
     // number of buffers lying outside this structure
     UINT64 bufferCount;

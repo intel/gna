@@ -1,102 +1,77 @@
 /**
- @copyright (C) 2019-2021 Intel Corporation
+ @copyright Copyright (C) 2019-2022 Intel Corporation
  SPDX-License-Identifier: LGPL-2.1-or-later
- */
+*/
 
 #include "LayerCapabilities.h"
 
+#include "AffineLayerCapabilities.h"
+#include "AuxiliaryCapabilities.h"
+#include "ConvolutionalLayer2DCapabilities.h"
+#include "GmmLayerCapabilities.h"
+
 using namespace GNA;
 
-const MultiplierMap& LayerCapabilities::InputElementCountMultipliers()
+const OperationCapabilityMap& LayerCapabilities::GetOperands(nn_operation operation, uint32_t operandIndex)
 {
-    static auto const multipliers = MultiplierMap{
-        {Gna2DataTypeInt8, 2 * InputElementCountMultiplier},
-        {Gna2DataTypeInt16, 1 * InputElementCountMultiplier},
-        {Gna2DataTypeInt32, InputElementCountMultiplier / 2},
-    };
-    return multipliers;
+    switch (operation)
+    {
+    case INTEL_AFFINE:
+    case INTEL_AFFINE_DIAGONAL:
+    case INTEL_AFFINE_MULTIBIAS:
+    case INTEL_RECURRENT:
+        return AffineLayerCapabilities::GetOperands(operandIndex).at(operation);
+    case INTEL_COPY:
+    case INTEL_INTERLEAVE:
+    case INTEL_DEINTERLEAVE:
+        return AuxiliaryCapabilities::GetOperands(operandIndex).at(operation);
+    case INTEL_CONVOLUTIONAL:
+    case INTEL_CONVOLUTIONAL_2D:
+    case INTEL_CONVOLUTIONAL_1D:
+        return ConvolutionalLayer2DCapabilities::GetOperands(operandIndex).at(operation);
+    case INTEL_GMM:
+        return GmmLayerCapabilities::GetOperands(operandIndex).at(operation);
+    default:
+        throw GnaException(Gna2StatusNotImplemented);
+    }
 }
 
-const DataModeLimits& LayerCapabilities::GetModes(uint32_t operandIndex, gna_device_generation generation)
+const DataModeLimits& LayerCapabilities::GetCommonModes(uint32_t operandIndex, Gna2DeviceGeneration generation)
 {
-    static const std::map<uint32_t, std::map<gna_device_generation, DataModeLimits>> modes =
+    static const std::map<uint32_t, std::map<Gna2DeviceGeneration, DataModeLimits>> modes =
     {
         {InputOperandIndex,
-            {{GNA_0_9, {{GNA_INT16}, Gna2StatusXnnErrorInputBytes}},
-            {GNA_3_0, {{GNA_INT8, GNA_INT16}, Gna2StatusXnnErrorInputBytes}},}
-        },
+            {{Gna2DeviceGeneration0_9, {{Gna2DataTypeInt16}, Gna2StatusXnnErrorInputBytes}},
+            {Gna2DeviceGeneration2_0, {{Gna2DataTypeInt16}, Gna2StatusXnnErrorInputBytes}},
+            {Gna2DeviceGeneration3_0, {{Gna2DataTypeInt8, Gna2DataTypeInt16}, Gna2StatusXnnErrorInputBytes}},
+            {Gna2DeviceGeneration3_1, {{Gna2DataTypeInt8, Gna2DataTypeInt16}, Gna2StatusXnnErrorInputBytes}},
+        }},
         {OutputOperandIndex,
-            {{GNA_0_9, {{GNA_INT16, GNA_INT32, GNA_DATA_ACTIVATION_DISABLED}, Gna2StatusXnnErrorOutputBytes}},
-            {GNA_3_0, {{GNA_INT8, GNA_INT16, GNA_INT32, GNA_DATA_ACTIVATION_DISABLED}, Gna2StatusXnnErrorOutputBytes}},}
-        },
+            {{Gna2DeviceGeneration0_9, {{Gna2DataTypeInt16, Gna2DataTypeInt32}, Gna2StatusXnnErrorOutputBytes}},
+            {Gna2DeviceGeneration2_0, {{Gna2DataTypeInt16, Gna2DataTypeInt32}, Gna2StatusXnnErrorOutputBytes}},
+            {Gna2DeviceGeneration3_0, {{Gna2DataTypeInt8, Gna2DataTypeInt16, Gna2DataTypeInt32}, Gna2StatusXnnErrorOutputBytes}},
+            {Gna2DeviceGeneration3_1, {{Gna2DataTypeInt8, Gna2DataTypeInt16, Gna2DataTypeInt32}, Gna2StatusXnnErrorOutputBytes}},
+        }},
+        {BiasOperandIndex, {
+            MakeModes<Gna2DeviceGeneration0_9, BiasOperandIndex>
+                (Gna2DataTypeInt32, Gna2DataTypeCompoundBias),
+            MakeModes<Gna2DeviceGeneration2_0, BiasOperandIndex>
+               (Gna2DataTypeInt32, Gna2DataTypeCompoundBias),
+            MakeModes<Gna2DeviceGeneration3_0, BiasOperandIndex>
+               (MakeDataModesCartesian(
+                    {Gna2DataTypeInt8, Gna2DataTypeInt16, Gna2DataTypeInt32, Gna2DataTypeCompoundBias},
+                    { Gna2TensorModeDefault, Gna2TensorModeDisabled })),
+            MakeModes<Gna2DeviceGeneration3_1, BiasOperandIndex>
+               (Gna2DataTypeInt8, Gna2DataTypeInt16, Gna2DataTypeInt32, Gna2DataTypeCompoundBias),
+        }},
     };
     return modes.at(operandIndex).at(generation);
 }
 
-const RangeLimits<>& LayerCapabilities::limitsForInput()
-{
-    static const RangeLimits<> _limitsForInput =
-    {
-        1,
-        InputElementCountMax,
-        1,
-        Gna2StatusXnnErrorInputVolume
-    };
-    return _limitsForInput;
-}
-
-const RangeLimits<>& LayerCapabilities::limitsForOutput()
-{
-    static const RangeLimits<> _limitsForOutput =
-    {
-        limitsForInput(),
-        Gna2StatusXnnErrorOutputVolume
-    };
-    return _limitsForOutput;
-}
-
-const RangeLimits<>& LayerCapabilities::limitsForInputShapeLegacy()
-{
-    static const RangeLimits<> _limitsForInputShapeLegacy =
-    {
-        InputElementCountMultiplier,
-        InputElementCountMax,
-        InputElementCountMultipliers(),
-        Gna2StatusXnnErrorInputVolume
-    };
-    return _limitsForInputShapeLegacy;
-}
-
-const RangeLimits<>& LayerCapabilities::limitsForOutputShapeLegacy()
-{
-    static const RangeLimits<> _limitsForOutputShapeLegacy =
-    {
-        limitsForInputShapeLegacy(),
-        Gna2StatusXnnErrorOutputVolume
-    };
-    return _limitsForOutputShapeLegacy;
-}
-
-const RangeLimits<>& LayerCapabilities::limitsForInputGroupsMax()
-{
-    static const RangeLimits<> _limitsForInputGroupsMax =
-    {
-        1,
-        InputGroupsCountMax,
-        1,
-        Gna2StatusXnnErrorInputVolume
-    };
-    return _limitsForInputGroupsMax;
-}
-
-const RangeLimits<>& LayerCapabilities::limitsForOutputGroupsMax()
-{
-    static const RangeLimits<> _limitsForInputGroupsMax =
-    {
-        1,
-        InputGroupsCountMax,
-        1,
-        Gna2StatusXnnErrorOutputVolume
-    };
-    return _limitsForInputGroupsMax;
-}
+constexpr StaticCaps LayerCapabilities::Input;
+constexpr StaticCaps LayerCapabilities::InputGroupMax;
+constexpr RangeLimits<uint32_t> LayerCapabilities::LegacyInputs;
+constexpr StaticCaps LayerCapabilities::InputEqual1;
+constexpr StaticCaps LayerCapabilities::Input1D;
+constexpr StaticCaps LayerCapabilities::WeightMultiplier;
+constexpr StaticCaps LayerCapabilities::OutputRnn;
