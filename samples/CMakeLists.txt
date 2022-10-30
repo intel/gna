@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 11)
 set(CXX_STANDARD_REQUIRED ON)
 
-
 project(${PROJECT_NAME})
 
 add_library(gna
