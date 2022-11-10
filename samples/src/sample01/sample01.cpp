@@ -5,7 +5,7 @@
 
 #define __STDC_WANT_LIB_EXT1__ 1
 
-#include "gna2-api.h"
+#include <gna3/gna2-api.h>
 
 #include <cinttypes>
 #include <cstdio>
