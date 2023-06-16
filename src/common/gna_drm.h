@@ -4,7 +4,7 @@
 #ifndef _GNA_DRM_H_
 #define _GNA_DRM_H_
 
-#include "drm/drm.h"
+#include "drm.h"
 
 #include <linux/const.h>
 #include <linux/ioctl.h>

@@ -295,7 +295,7 @@ set(GNA_ALL_TESTS_REGISTERED_TARGETS "gna-api;${GNA_ALL_TESTS_REGISTERED_TARGETS
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux" OR ${CMAKE_SYSTEM_NAME} STREQUAL "Android")
   set(gna_lib_headers ${gna_lib_headers} ${COMMON_DIR}/gna_drm.h)
-  set(DRM_INCLUDE_PATH /usr/include/drm)
+  find_path(DRM_INCLUDE_PATH drm.h HINTS /usr/include/drm /usr/include/libdrm)
 endif()
 
 target_include_directories(gna-obj PRIVATE
